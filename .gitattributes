@@ -1,0 +1,4 @@
+# Package fixtures are signed and checked byte for byte: never convert them.
+*.zip binary
+*.sig -text
+test/fixtures/packages/** -text

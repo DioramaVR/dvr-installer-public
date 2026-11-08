@@ -1,0 +1,88 @@
+{
+  "format": 1,
+  "title": "Credits",
+  "intro": "DioramaVR is made by scrire, on top of other people's open-source work. If a mod makes you happy, these are the people to thank too.",
+  "credits": [
+    {
+      "name": "UEVR",
+      "for": "VR for the Unreal Engine games, by praydog",
+      "license": "MIT",
+      "url": "https://github.com/praydog/UEVR",
+      "highlight": true,
+      "support": [
+        { "label": "GitHub Sponsors", "url": "https://github.com/sponsors/praydog" },
+        { "label": "Patreon", "url": "https://www.patreon.com/praydog" }
+      ]
+    },
+    {
+      "name": "BepInEx",
+      "for": "Loads the mods into Unity games",
+      "license": "LGPL-2.1",
+      "url": "https://github.com/BepInEx/BepInEx"
+    },
+    {
+      "name": ".NET runtime",
+      "for": "Runs the mod loader inside the game",
+      "license": "MIT",
+      "url": "https://github.com/dotnet/runtime"
+    },
+    {
+      "name": "OpenVR",
+      "for": "Talks to SteamVR",
+      "license": "BSD-3-Clause",
+      "url": "https://github.com/ValveSoftware/openvr"
+    },
+    {
+      "name": "Lucide",
+      "for": "Icons in the VR menu",
+      "license": "ISC",
+      "url": "https://lucide.dev",
+      "support": [
+        { "label": "Open Collective", "url": "https://opencollective.com/lucide-icons" }
+      ]
+    },
+    {
+      "name": "Atkinson Hyperlegible Next",
+      "for": "Text in the VR menu",
+      "license": "OFL-1.1",
+      "url": "https://fonts.google.com/specimen/Atkinson+Hyperlegible+Next"
+    },
+    {
+      "name": "Electron",
+      "for": "The installer app's window and runtime",
+      "license": "MIT",
+      "url": "https://github.com/electron/electron",
+      "notice": "LICENSE.electron.txt next to the app"
+    },
+    {
+      "name": "Chromium",
+      "for": "Inside Electron: draws the installer app",
+      "license": "BSD-3-Clause and others",
+      "url": "https://www.chromium.org/",
+      "notice": "LICENSES.chromium.html next to the app"
+    },
+    {
+      "name": "Node.js",
+      "for": "Inside Electron: the installer app's engine",
+      "license": "MIT",
+      "url": "https://github.com/nodejs/node",
+      "notice": "LICENSE.electron.txt next to the app"
+    },
+    {
+      "name": "Tilt Warp",
+      "for": "The DioramaVR wordmark and headings",
+      "license": "OFL-1.1",
+      "url": "https://github.com/googlefonts/Tilt-Fonts",
+      "notice": "app/renderer/fonts/OFL-TiltWarp.txt"
+    },
+    {
+      "name": "Castoro",
+      "for": "The scrire name",
+      "license": "OFL-1.1",
+      "url": "https://github.com/TiroTypeworks/Castoro",
+      "notice": "app/renderer/fonts/OFL-Castoro.txt"
+    }
+  ],
+  "notices": "Every download includes the full licence notices for everything it ships.",
+  "disclaimer": "DioramaVR is an unofficial fan project. It isn't affiliated with or endorsed by the makers of the games it supports. Game names and art belong to their owners."
+}

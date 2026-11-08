@@ -1,0 +1,233 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; img-src 'self' art: data: file:; media-src art: file:; font-src 'self'; style-src 'self' 'unsafe-inline'">
+  <title>Diorama VR</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <div class="ambient" aria-hidden="true"><canvas class="warp" id="warp"></canvas><div class="ambient-img" id="ambientA"></div><div class="ambient-img" id="ambientB"></div></div>
+
+  <header class="titlebar">
+    <div class="brand"><span class="word product" aria-label="Diorama VR">Dıorama<canvas class="flame" data-flame aria-hidden="true"></canvas> VR</span></div>
+    <nav class="testnav" id="testNav" hidden></nav>
+    <div class="drag"></div>
+    <button class="load-btn" id="loadBtn" title="Load a DioramaVR mod you were sent as a .zip (you can also drop it on the window)"><svg viewBox="0 0 16 16"><path d="M8 2.5v8M4.5 7L8 10.5 11.5 7M3 13h10"/></svg>Load mod from file…</button>
+    <div class="acct" id="acct" hidden>
+      <button class="acct-btn" id="acctBtn" title="The Steam account whose library gets the (VR) entries">
+        <span class="acct-av" id="acctAv"></span>
+        <span class="acct-text"><small>Steam account</small><b id="acctName"></b></span>
+        <svg viewBox="0 0 10 6"><path d="M1 1l4 4 4-4"/></svg>
+      </button>
+      <div class="acct-menu" id="acctMenu" hidden></div>
+    </div>
+    <div class="winctl">
+      <button data-win="min" title="Minimise"><svg viewBox="0 0 10 10"><path d="M1 5h8"/></svg></button>
+      <button data-win="max" title="Maximise"><svg viewBox="0 0 10 10"><rect x="1.5" y="1.5" width="7" height="7"/></svg></button>
+      <button data-win="close" class="close" title="Close"><svg viewBox="0 0 10 10"><path d="M1.5 1.5l7 7M8.5 1.5l-7 7"/></svg></button>
+    </div>
+  </header>
+
+  <!-- Home: the gallery -->
+  <main class="view home" id="home">
+    <div class="home-scroll">
+      <div class="banners" id="banners"></div>
+      <div class="intro">
+        <h1>Play your games as <span class="flame-word" aria-label="Dioramas">Dıoramas<canvas class="flame" data-flame aria-hidden="true"></canvas></span></h1>
+        <p>Choose a game to install its VR mod. Uninstalling puts the game back exactly as it was. Your Steam accounts are only read from this PC, never looked up online.</p>
+      </div>
+      <div class="pc" id="pc">
+        <div class="pc-head">
+          <h2>Can this PC run it?</h2>
+          <span class="pc-status checking" id="pcStatus">Checking…</span>
+          <button class="pc-more" id="pcMore" hidden>Details</button>
+        </div>
+        <div class="pc-tiles" id="pcTiles"></div>
+        <div class="pc-details" id="pcDetails" hidden></div>
+      </div>
+      <p class="list-note" id="listNote" hidden></p>
+      <div class="grid" id="grid"></div>
+      <footer class="made-by">free mods made by <span class="flame-word" aria-label="scrire">scrıre<canvas class="flame" data-flame aria-hidden="true"></canvas></span></footer>
+      <footer class="foot"><button class="foot-link" id="creditsLink">Credits and licences: UEVR, BepInEx, the .NET runtime and others</button></footer>
+    </div>
+  </main>
+
+  <!-- About / Credits: from credits.json, filled in by app.js as plain text -->
+  <main class="view credits" id="credits" hidden>
+    <div class="home-scroll">
+      <button class="back" id="creditsBack"><svg viewBox="0 0 20 20"><path d="M12 4l-6 6 6 6"/></svg>All games</button>
+      <section class="credits-body" id="creditsBody"></section>
+    </div>
+  </main>
+
+  <!-- The VR menu guide: shared by every mod, opened from its card on the home page -->
+  <main class="view guide" id="guide" hidden>
+    <div class="home-scroll">
+      <button class="back" id="guideBack"><svg viewBox="0 0 20 20"><path d="M12 4l-6 6 6 6"/></svg>All games</button>
+      <!-- Shared by every mod: the in-headset VR menu (VrUiKit) -->
+      <section class="vrmenu">
+        <h1>Using the VR menu</h1>
+        <p class="vrmenu-lede">Every mod has the same menu in the headset. Squeeze <kbd>both grips + both triggers</kbd> to open or close it in any game. Each game's page lists its own quicker button. Point at the menu and click with the trigger.</p>
+        <div class="vrmenu-cols">
+          <div>
+            <h3>Mode</h3>
+            <p>How the game's windows appear around you.</p>
+            <dl class="controls">
+              <dt><b>Panel</b></dt><dd>The whole game UI on one floating screen</dd>
+              <dt><b>Arranged</b></dt><dd>Windows placed around the table from a layout</dd>
+              <dt><b>Free</b></dt><dd>Grab windows and put them anywhere, or on a wrist</dd>
+            </dl>
+          </div>
+          <div>
+            <h3>Controls</h3>
+            <p>Every action and the button it's on.</p>
+            <dl class="controls">
+              <dt><b>Rebind</b></dt><dd>Click an action, then press the new button</dd>
+              <dt><b>+</b></dt><dd>Add a second button to the same action</dd>
+              <dt><b>Presets</b></dt><dd>Switch between saved control sets, or save your own</dd>
+            </dl>
+          </div>
+          <div>
+            <h3>Settings</h3>
+            <p>Left-handed, resolution, the monitor view and more, changed with − and +.</p>
+            <dl class="controls">
+              <dt><b>Free windows</b></dt><dd>Point at one and hold grip to move it; the stick changes distance and size</dd>
+              <dt><b>Wrist</b></dt><dd>Let go of a window by your other wrist to wear it</dd>
+            </dl>
+          </div>
+        </div>
+      </section>
+    </div>
+  </main>
+
+  <!-- One game: its diorama across the background, options and install on the left -->
+  <main class="view game" id="game" hidden>
+    <div class="game-bg" id="gameBg"></div>
+    <video class="game-video" id="gameVideo" muted loop playsinline></video>
+    <div class="game-shade"></div>
+    <div class="game-col" id="gameCol">
+      <button class="back" id="backHome"><svg viewBox="0 0 20 20"><path d="M12 4l-6 6 6 6"/></svg>All games</button>
+      <div class="game-scroll">
+        <div class="game-title">
+          <img class="game-logo" id="gameLogo" alt="">
+          <h1 id="gameName"></h1>
+        </div>
+        <p class="game-line" id="gameLine" hidden></p>
+        <div class="badges" id="gameBadges"></div>
+        <p class="details-note" id="detailsNote" hidden>The mod's settings appear here once it's installed.</p>
+        <button class="howto" id="howtoBtn" hidden><svg viewBox="0 0 20 20"><circle cx="10" cy="10" r="8"/><path d="M7.8 7.6a2.3 2.3 0 0 1 4.4.9c0 1.5-2.2 1.9-2.2 3.2M10 14.3v.2"/></svg><span><b>See how to play in VR</b></span><svg class="go" viewBox="0 0 20 20"><path d="M4 10h11M11 5l5 5-5 5"/></svg></button>
+        <div class="need" id="needToKnow" hidden><b><svg viewBox="0 0 20 20"><circle cx="10" cy="10" r="8"/><path d="M10 5.8v5.4M10 14v.2"/></svg>Need to know</b><div id="needList"></div></div>
+        <div class="need first" id="firstLaunch" hidden><b>First start</b><p id="firstLaunchText"></p></div>
+        <div class="shots" id="gallery" hidden></div>
+        <div id="warnings"></div>
+        <div class="section" id="versionSection" hidden>
+          <h3>Version</h3>
+          <div class="row version-row">
+            <span><b><span id="versionName"></span><span class="badge" id="versionBadge" hidden></span></b><small id="versionNote"></small></span>
+            <select id="versionPick" hidden title="Which version Install uses"></select>
+          </div>
+          <div class="public-offer" id="publicOffer" hidden>
+            <span id="publicOfferText"></span>
+            <button class="btn ghost" id="backToPublic">Use the public version</button>
+          </div>
+          <label class="row toggle-row" id="betaRow" hidden>
+            <span><b>Include open betas</b><small>Offer open-beta versions of this mod too, before they're marked stable.</small></span>
+            <input type="checkbox" id="optBeta" class="switch">
+          </label>
+        </div>
+        <div class="section" id="issuesSection" hidden>
+          <h3>Known issues</h3>
+          <ul class="issues" id="issuesList"></ul>
+        </div>
+        <div class="section">
+          <h3>Settings</h3>
+          <div id="options"></div>
+        </div>
+        <div class="section" id="startSection">
+          <h3>Where to start it</h3>
+          <label class="row toggle-row">
+            <span><b>Steam &amp; SteamVR library</b><small>Adds "<span id="vrName"></span>" to your library.</small></span>
+            <input type="checkbox" id="optSteam" class="switch">
+          </label>
+          <div class="account-row" id="accountRow">
+            <span class="acct-av" id="acctAvInline"></span>
+            <span class="account-text">Goes into <b id="acctInline"></b>'s library. Only this account is changed.</span>
+            <button class="change" id="acctChange">Change</button>
+          </div>
+          <label class="row toggle-row">
+            <span><b>Desktop shortcut</b><small>Start it without opening Steam.</small></span>
+            <input type="checkbox" id="optDesktop" class="switch">
+          </label>
+        </div>
+      </div>
+      <div class="game-foot">
+        <ol class="steps play-checks" id="playChecks" hidden></ol>
+        <div class="foot-buttons">
+        <button class="btn ghost danger" id="uninstallBtn" hidden>Uninstall</button>
+        <button class="btn primary" id="installBtn"><canvas class="warp-btn" aria-hidden="true"></canvas><span id="installLabel">Install</span><svg viewBox="0 0 20 20"><path d="M4 10h11M11 5l5 5-5 5"/></svg></button>
+        <button class="btn primary" id="playBtn" hidden><canvas class="warp-btn" aria-hidden="true"></canvas><span>Launch</span><svg viewBox="0 0 20 20"><path d="M4 10h11M11 5l5 5-5 5"/></svg></button>
+        </div>
+      </div>
+    </div>
+    <!-- How to play: swaps in for the column above, the diorama stays behind -->
+    <div class="game-col howto-col" id="howtoCol" hidden>
+      <button class="back" id="howtoBack"><svg viewBox="0 0 20 20"><path d="M12 4l-6 6 6 6"/></svg><span id="howtoBackLabel">Back</span></button>
+      <div class="game-scroll">
+        <h1>How to play in VR</h1>
+        <div id="howtoBody"></div>
+      </div>
+    </div>
+  </main>
+
+  <section class="overlay" id="progressView" hidden>
+    <canvas class="warp-layer" data-warp aria-hidden="true"></canvas>
+    <div class="progress-card">
+      <div class="spinner-ring"><svg viewBox="0 0 120 120"><circle cx="60" cy="60" r="52" class="track"/><circle cx="60" cy="60" r="52" class="bar" id="ringBar"/></svg><span id="ringPct">0%</span></div>
+      <h2 id="progressTitle">Installing…</h2>
+      <p class="muted" id="progressStep"></p>
+    </div>
+  </section>
+
+  <section class="overlay done" id="doneView" hidden>
+    <canvas class="warp-layer" data-warp aria-hidden="true"></canvas>
+    <button class="back done-back" id="doneBack"><svg viewBox="0 0 20 20"><path d="M12 4l-6 6 6 6"/></svg>Back</button>
+    <div class="done-card">
+      <div class="check"><svg viewBox="0 0 52 52"><circle cx="26" cy="26" r="24"/><path class="tick" d="M15 27l7 7 15-16"/><path class="cross" d="M18 18l16 16M34 18L18 34"/></svg></div>
+      <h2 id="doneTitle"></h2>
+      <p class="done-lead" id="doneLead"></p>
+      <p class="muted" id="doneSub"></p>
+      <div class="notes" id="doneNotes"></div>
+      <ol class="steps" id="doneSteps"></ol>
+      <div class="done-actions">
+        <div class="or" id="launchOr" hidden>or</div>
+        <button class="btn primary" id="launchBtn" hidden><canvas class="warp-btn" aria-hidden="true"></canvas><span>Launch now</span><svg viewBox="0 0 20 20"><path d="M4 10h11M11 5l5 5-5 5"/></svg></button>
+      </div>
+    </div>
+  </section>
+
+  <!-- Drag a mod's .zip over the window -->
+  <section class="drop-zone" id="dropZone" hidden>
+    <div class="drop-card">
+      <svg viewBox="0 0 48 48"><path d="M24 8v22M15 21l9 9 9-9M10 38h28"/></svg>
+      <h2>Drop to load the mod</h2>
+      <p class="muted">A DioramaVR mod's .zip file. It's checked before anything is used, and your games aren't changed until you install.</p>
+    </div>
+  </section>
+
+  <div class="toast" id="toast" hidden></div>
+
+  <div class="modal-wrap" id="modal" hidden>
+    <div class="modal">
+      <h3 id="modalTitle"></h3>
+      <p id="modalBody"></p>
+      <div class="modal-actions" id="modalActions"></div>
+    </div>
+  </div>
+
+  <script src="warp.js"></script>
+  <script src="flame.js"></script>
+  <script src="mock.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>
