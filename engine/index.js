@@ -14,6 +14,7 @@ const pkg = require('./package');
 const remote = require('./remote');
 const download = require('./download');
 const gamedata = require('./gamedata');
+const assets = require('./assets');
 const active = require('./active');
 const dvr = require('dvr-package');
 const { compareVersions, appVersion } = require('./version');
@@ -438,6 +439,10 @@ function status({ gameDirs = {} } = {}) {
     const issuesVersion = installedVersion || act?.version || rec?.version || null;
     const issues = issuesFor(index?.knownIssues || mod?.knownIssues || [], issuesVersion)
       .map((k) => ({ id: k.id, title: k.title, text: k.text, severity: k.severity }));
+    // Every known issue with its since/fixedIn, so the page can show the ones
+    // for whichever version is selected.
+    const allIssues = (index?.knownIssues || mod?.knownIssues || [])
+      .map((k) => ({ id: k.id, title: k.title, text: k.text, severity: k.severity, since: k.since || null, fixedIn: k.fixedIn || null }));
     const wave = g?.wave ? (remoteState.waves || []).find((w) => w.id === g.wave) : null;
     return {
       id,
@@ -476,13 +481,18 @@ function status({ gameDirs = {} } = {}) {
       recommended,
       updateAvailable,
       optInBeta,
+      // A stable version plus a newer open beta: the page offers the beta as a choice.
+      betaOffer: index ? remote.betaOffer(index) : null,
       knownIssues: issues,
+      allIssues,
       // The version known issues are shown for (gameData filters the zip's by it too).
       issuesVersion,
       // From the game's data zip, when it's already cached for the index's hash
       // (the gallery card); the page fetches it with gameData().
       line: gamedata.cached(id, index)?.line || null,
-      hover: (gamedata.cached(id, index)?.media || []).find((m) => m.role === 'hover' && m.kind === 'video') || null,
+      // The card's hover clip: the turntable (the assets list's when the index
+      // has one, else the data zip's), once it's cached. { from, media }.
+      hover: hoverOf(id, index),
       payloadReady: !!mod && fs.existsSync(mod.payloadDir),
       version: act?.version || null,
       maturity: act?.maturity || null,
@@ -841,26 +851,9 @@ function launchCommand(mod, gameDir) {
   return loaders.get(mod.loader.type).launch(mod, gameDir);
 }
 
-// Needs Steam closed: the caller checks steam.steamRunning() / closeSteam().
-function addSteamEntry({ modId, gameDir, accountId }) {
-  const mod = getMod(modId);
-  const steamDir = steam.findSteam();
-  if (!steamDir) throw new Error('Steam not found');
-  if (!process.env.DVR_SKIP_PROCESS_CHECK && steam.steamRunning()) throw new Error('Steam is running; close it first');
-  if (!steam.accounts(steamDir).some((a) => a.id === accountId)) throw new Error(`No Steam account folder ${accountId}`);
-  const l = launchCommand(mod, gameDir);
-  const res = shortcuts.addSteamShortcut({
-    steamDir, accountId, name: vrName(mod), exe: l.exe, startDir: l.cwd,
-    launchArgs: l.args, icon: l.icon, art: steam.art(steamDir, mod.appid),
-  });
-  const manifest = readManifest(gameDir, mod);
-  if (manifest) {
-    manifest.steamShortcut = { accountId, appid: res.appid, name: vrName(mod) };
-    writeManifest(gameDir, mod, manifest);
-  }
-  return res;
-}
-
+// Removes the "<Game> (VR)" Steam entry an older installer added (the
+// manifest's steamShortcut). Needs Steam closed: the caller checks
+// steam.steamRunning() / closeSteam().
 function removeSteamEntry({ modId, accountId, appid }) {
   const mod = getMod(modId);
   const steamDir = steam.findSteam();
@@ -882,32 +875,60 @@ function addDesktopEntry({ modId, gameDir }) {
   return lnk;
 }
 
-// ---------- a game's data zip (engine/gamedata.js) ----------
-// The page's text and media: line, firstLaunch, needToKnow, tutorial (title and
-// text), knownIssues (the zip's, for the version shown; null: use the index's)
-// and media (paths inside the zip, served by gameDataFile). Fetched once per
-// index hash and cached; null when there's none or it couldn't be had.
+// ---------- a game's data zip (engine/gamedata.js) and media (engine/assets.js) ----------
+// The page's text, from the data zip: line, firstLaunch, needToKnow, tutorial
+// (title and text), knownIssues (the zip's, for the version shown; null: use
+// the index's); hasText says whether there was any. And its media: from the
+// index's assets list when it has one (the data zip's media are then ignored),
+// each file fetched and checked on its own; else the data zip's. mediaFrom
+// ('assets' or 'data') says which, and so which of gameAssetFile and
+// gameDataFile serves them. Both are cached by hash; null when there's neither.
 async function gameData(modId, opts = {}) {
   const id = modIdOf(modId);
   const g = remoteGame(id);
   if (!g?.index) return null;
-  const data = await gamedata.get(id, g.index, opts);
-  if (!data) return null;
+  const fromAssets = assets.has(g.index);
+  const [data, media] = await Promise.all([
+    gamedata.get(id, g.index, opts),
+    fromAssets ? assets.get(id, g.index, opts) : null,
+  ]);
+  if (!data && !fromAssets) return null;
   const s = status().find((x) => x.id === id);
   const v = s?.issuesVersion || null;
   return {
-    ...data,
-    knownIssues: data.knownIssues ? issuesFor(data.knownIssues, v).map((k) => ({ id: k.id, title: k.title, text: k.text, severity: k.severity })) : null,
+    id,
+    line: data?.line || null,
+    firstLaunch: data?.firstLaunch || null,
+    needToKnow: data?.needToKnow || [],
+    tutorial: data?.tutorial || [],
+    knownIssues: data?.knownIssues ? issuesFor(data.knownIssues, v).map((k) => ({ id: k.id, title: k.title, text: k.text, severity: k.severity })) : null,
+    // All of the zip's, with since/fixedIn: the page filters them for the selected version.
+    allKnownIssues: data?.knownIssues ? data.knownIssues.map((k) => ({ id: k.id, title: k.title, text: k.text, severity: k.severity, since: k.since || null, fixedIn: k.fixedIn || null })) : null,
+    hasText: !!data,
+    mediaFrom: fromAssets ? 'assets' : 'data',
+    media: fromAssets ? media || [] : data.media,
   };
 }
-// The full path of one of a game's cached data media files (for the app's art: URLs), or null.
+// The full path of one of a game's cached data zip media files (for the app's art: URLs), or null.
 const gameDataFile = (modId, name) => gamedata.mediaFile(modIdOf(modId), remoteGame(modIdOf(modId))?.index, name);
+// The same for a file of the index's assets list.
+const gameAssetFile = (modId, name) => assets.mediaFile(modIdOf(modId), remoteGame(modIdOf(modId))?.index, name);
+function hoverOf(id, index) {
+  const turntable = (list) => (list || []).find((m) => m.role === 'turntable' && m.kind === 'video') || null;
+  if (assets.has(index)) {
+    const m = turntable(assets.cached(id, index));
+    return m ? { from: 'assets', media: m } : null;
+  }
+  const media = gamedata.cached(id, index)?.media || [];
+  const m = media.find((x) => x.role === 'hover' && x.kind === 'video') || turntable(media);
+  return m ? { from: 'data', media: m } : null;
+}
 
 module.exports = {
   vr,
   steam, shortcuts, options, cfg, preflight,
   modsDir, loadMods, getMod, status, readManifest,
   sideload, versions, setActive, maturityLabel, issuesFor, PLAYER_MESSAGES,
-  refresh, gameData, gameDataFile, gamedata, fetchRelease, installRelease, backToPublic, setBetaOptIn, dismissAnnouncement, remote, SOURCES,
-  install, uninstall, addSteamEntry, removeSteamEntry, addDesktopEntry, vrName, launchCommand,
+  refresh, gameData, gameDataFile, gameAssetFile, gamedata, assets, fetchRelease, installRelease, backToPublic, setBetaOptIn, dismissAnnouncement, remote, SOURCES,
+  install, uninstall, removeSteamEntry, addDesktopEntry, vrName, launchCommand,
 };

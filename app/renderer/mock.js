@@ -95,8 +95,12 @@ if (!window.dvr) {
       const hero = { file: g.art.hero, kind: 'image', role: 'hero', alt: '' };
       const clip = { file: new URL('../../mods/tpm-vr/hover.webm', location.href).href, kind: 'video', alt: '', poster: null, sources: [] };
       return { id, line: 'Your museum as a living model in front of you.', firstLaunch: g.firstLaunch, needToKnow: g.needToKnow,
-        tutorial: g.tutorial.map((t) => ({ title: t.title, text: t.text })), knownIssues: g.knownIssues,
-        media: [hero, { ...clip, role: 'turntable' }, { ...clip, role: 'hover' }, { file: g.art.capsule, kind: 'image', role: 'gallery', alt: 'A capsule.' }] };
+        tutorial: g.tutorial.map((t) => ({ title: t.title, text: t.text })), knownIssues: g.knownIssues, hasText: true,
+        // As from the index's assets list: no hover entry (the card plays the turntable).
+        mediaFrom: 'assets',
+        media: [hero, { ...clip, role: 'turntable' },
+          { file: g.art.capsule, kind: 'image', role: 'gallery', alt: 'The capsule.' },
+          { file: g.art.hero, kind: 'image', role: 'gallery', alt: 'The hero art.' }] };
     },
     sideload: async () => ({ canceled: false, results: [loadOne('tpm-vr-0.1.0.zip')] }),
     sideloadFiles: async (files) => ({ canceled: false, results: Array.from(files, (f) => loadOne(f.name)) }),
@@ -105,7 +109,6 @@ if (!window.dvr) {
     dismissAnnouncement: async () => {},
     // SteamVR comes on after a moment, then the headset.
     vrStatus: (() => { const t0 = Date.now(); return async () => ({ steamvr: Date.now() - t0 > 3000, headset: Date.now() - t0 > 6000, hmd: null }); })(),
-    accounts: async () => [{ id: '111', persona: 'Main account', mostRecent: true }, { id: '222', persona: 'Second account' }],
     getSettings: async () => ({}),
     setSettings: async () => {},
     steamRunning: async () => true,
@@ -139,7 +142,6 @@ if (!window.dvr) {
         }
         for (let d = 0; d <= 302; d += 25) { progress({ modId, stage: 'copy', done: Math.min(d, 302), total: 302 }); await wait(120); }
         progress({ modId, stage: 'config' }); await wait(300);
-        if (plan.steam) { progress({ modId, stage: 'steam' }); await wait(300); }
         progress({ modId, stage: 'done' });
         if (r) Object.assign(g, { source: 'download', active: { version: r.version, maturity: r.maturity, coreVersion: r.coreVersion } });
         Object.assign(g, { installed: true, installedVersion: g.active?.version || version, installedMaturity: g.active?.maturity });

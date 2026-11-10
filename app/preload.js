@@ -2,7 +2,6 @@ const { contextBridge, ipcRenderer, webUtils } = require('electron');
 
 if (!process.argv.includes('--dvr-mock')) contextBridge.exposeInMainWorld('dvr', {
   status: () => ipcRenderer.invoke('status'),
-  accounts: () => ipcRenderer.invoke('accounts'),
   getSettings: () => ipcRenderer.invoke('settings:get'),
   setSettings: (s) => ipcRenderer.invoke('settings:set', s),
   steamRunning: () => ipcRenderer.invoke('steam:running'),

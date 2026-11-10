@@ -3,25 +3,17 @@
 <head>
   <meta charset="utf-8">
   <meta http-equiv="Content-Security-Policy" content="default-src 'self'; img-src 'self' art: data: file:; media-src art: file:; font-src 'self'; style-src 'self' 'unsafe-inline'">
-  <title>Diorama VR</title>
+  <title>DioramaVR</title>
   <link rel="stylesheet" href="styles.css">
 </head>
 <body>
   <div class="ambient" aria-hidden="true"><canvas class="warp" id="warp"></canvas><div class="ambient-img" id="ambientA"></div><div class="ambient-img" id="ambientB"></div></div>
 
   <header class="titlebar">
-    <div class="brand"><span class="word product" aria-label="Diorama VR">Dıorama<canvas class="flame" data-flame aria-hidden="true"></canvas> VR</span></div>
+    <div class="brand"><span class="word product" aria-label="DioramaVR">DıoramaVR</span></div>
     <nav class="testnav" id="testNav" hidden></nav>
     <div class="drag"></div>
     <button class="load-btn" id="loadBtn" title="Load a DioramaVR mod you were sent as a .zip (you can also drop it on the window)"><svg viewBox="0 0 16 16"><path d="M8 2.5v8M4.5 7L8 10.5 11.5 7M3 13h10"/></svg>Load mod from file…</button>
-    <div class="acct" id="acct" hidden>
-      <button class="acct-btn" id="acctBtn" title="The Steam account whose library gets the (VR) entries">
-        <span class="acct-av" id="acctAv"></span>
-        <span class="acct-text"><small>Steam account</small><b id="acctName"></b></span>
-        <svg viewBox="0 0 10 6"><path d="M1 1l4 4 4-4"/></svg>
-      </button>
-      <div class="acct-menu" id="acctMenu" hidden></div>
-    </div>
     <div class="winctl">
       <button data-win="min" title="Minimise"><svg viewBox="0 0 10 10"><path d="M1 5h8"/></svg></button>
       <button data-win="max" title="Maximise"><svg viewBox="0 0 10 10"><rect x="1.5" y="1.5" width="7" height="7"/></svg></button>
@@ -34,8 +26,8 @@
     <div class="home-scroll">
       <div class="banners" id="banners"></div>
       <div class="intro">
-        <h1>Play your games as <span class="flame-word" aria-label="Dioramas">Dıoramas<canvas class="flame" data-flame aria-hidden="true"></canvas></span></h1>
-        <p>Choose a game to install its VR mod. Uninstalling puts the game back exactly as it was. Your Steam accounts are only read from this PC, never looked up online.</p>
+        <h1>Play your games as <span aria-label="Dioramas">Dıoramas</span></h1>
+        <p>Choose a game to install its VR mod. Uninstalling puts the game back exactly as it was. Your Steam library is only read from this PC, never looked up online.</p>
       </div>
       <div class="pc" id="pc">
         <div class="pc-head">
@@ -119,7 +111,12 @@
         <button class="howto" id="howtoBtn" hidden><svg viewBox="0 0 20 20"><circle cx="10" cy="10" r="8"/><path d="M7.8 7.6a2.3 2.3 0 0 1 4.4.9c0 1.5-2.2 1.9-2.2 3.2M10 14.3v.2"/></svg><span><b>See how to play in VR</b></span><svg class="go" viewBox="0 0 20 20"><path d="M4 10h11M11 5l5 5-5 5"/></svg></button>
         <div class="need" id="needToKnow" hidden><b><svg viewBox="0 0 20 20"><circle cx="10" cy="10" r="8"/><path d="M10 5.8v5.4M10 14v.2"/></svg>Need to know</b><div id="needList"></div></div>
         <div class="need first" id="firstLaunch" hidden><b>First start</b><p id="firstLaunchText"></p></div>
-        <div class="shots" id="gallery" hidden></div>
+        <div class="viewer" id="gallery" tabindex="0" aria-label="Pictures" hidden>
+          <div class="viewer-frame" id="galleryFrame"></div>
+          <button class="viewer-nav prev" id="galleryPrev" aria-label="Previous picture"><svg viewBox="0 0 20 20"><path d="M12 4l-6 6 6 6"/></svg></button>
+          <button class="viewer-nav next" id="galleryNext" aria-label="Next picture"><svg viewBox="0 0 20 20"><path d="M8 4l6 6-6 6"/></svg></button>
+          <div class="viewer-foot"><span class="viewer-count" id="galleryCount"></span></div>
+        </div>
         <div id="warnings"></div>
         <div class="section" id="versionSection" hidden>
           <h3>Version</h3>
@@ -132,7 +129,7 @@
             <button class="btn ghost" id="backToPublic">Use the public version</button>
           </div>
           <label class="row toggle-row" id="betaRow" hidden>
-            <span><b>Include open betas</b><small>Offer open-beta versions of this mod too, before they're marked stable.</small></span>
+            <span><b>Download the beta instead</b><small id="betaText"></small></span>
             <input type="checkbox" id="optBeta" class="switch">
           </label>
         </div>
@@ -146,15 +143,6 @@
         </div>
         <div class="section" id="startSection">
           <h3>Where to start it</h3>
-          <label class="row toggle-row">
-            <span><b>Steam &amp; SteamVR library</b><small>Adds "<span id="vrName"></span>" to your library.</small></span>
-            <input type="checkbox" id="optSteam" class="switch">
-          </label>
-          <div class="account-row" id="accountRow">
-            <span class="acct-av" id="acctAvInline"></span>
-            <span class="account-text">Goes into <b id="acctInline"></b>'s library. Only this account is changed.</span>
-            <button class="change" id="acctChange">Change</button>
-          </div>
           <label class="row toggle-row">
             <span><b>Desktop shortcut</b><small>Start it without opening Steam.</small></span>
             <input type="checkbox" id="optDesktop" class="switch">

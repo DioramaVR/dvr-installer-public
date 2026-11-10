@@ -112,7 +112,10 @@ function problem(doc, kind, expect = {}) {
   if (!doc || typeof doc !== 'object' || Array.isArray(doc)) return 'not an object';
   if (!Number.isInteger(doc.format) || doc.format < 1) return 'no format number';
   if (doc.format > FORMAT) return 'newer-format';
-  const bad = schemas.validate(doc, kind);
+  // An index's media list (assets) that's malformed doesn't cost the game its
+  // releases: engine/assets.js checks it again (dvr-package's strict check)
+  // and then ignores it, so the page falls back as if there were none.
+  const bad = schemas.validate(doc, kind).filter((p) => !(kind === 'index' && /^\/assets(\/|$)/.test(p.path || '')));
   if (bad.length) return `${bad[0].path}: ${bad[0].message}${bad.length > 1 ? ` (and ${bad.length - 1} more)` : ''}`;
   if (kind === 'registry') {
     const ids = new Set();
@@ -333,6 +336,17 @@ function usableReleases(index, { optInBeta = false, appVersion: version = appVer
   return optInBeta || !stable.length ? all : stable;
 }
 
+// The open beta a player could choose instead of stable: the newest usable
+// open beta newer than the newest usable stable. null when there's no stable
+// (the betas are offered anyway) or no newer beta (nothing to choose).
+function betaOffer(index, { appVersion: version = appVersion() } = {}) {
+  const all = usableReleases(index, { optInBeta: true, appVersion: version });
+  const stable = all.find((r) => r.maturity === 'stable');
+  const beta = all.find((r) => r.maturity === 'open-beta');
+  return stable && beta && compareVersions(beta.version, stable.version) > 0
+    ? { version: beta.version, maturity: beta.maturity, stableVersion: stable.version } : null;
+}
+
 function isTested(release, buildid) {
   return buildid != null && (release.testedBuildIds || []).map(String).includes(String(buildid));
 }
@@ -345,7 +359,7 @@ function pickRelease(index, { optInBeta = false, appVersion: version = appVersio
 }
 
 module.exports = {
-  REGISTRY_URL, FORMAT, registryUrl, okUrl, fetchSafe, load, usableReleases, pickRelease, isTested,
+  REGISTRY_URL, FORMAT, registryUrl, okUrl, fetchSafe, load, usableReleases, betaOffer, pickRelease, isTested,
   activeAnnouncements, versionMatches, dismissAnnouncement, betaOptIn, setBetaOptIn, readSettings,
   appVersion, compareVersions,
 };

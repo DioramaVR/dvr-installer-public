@@ -3,9 +3,12 @@
 A small Electron app that installs the free DioramaVR tabletop VR mods. It
 reads DioramaVR's signed list of mods, finds your installed Steam games, shows
 a gallery of the games there's a mod for, and downloads and installs (or
-uninstalls) the mods you pick. It can also add a "<Game> (VR)" entry to your
-Steam and SteamVR libraries, and put a shortcut on your desktop. The exe ships
-no mods itself: they're downloaded, or loaded from a file (closed betas).
+uninstalls) the mods you pick. It can also put a "<Game> (VR)" shortcut on
+your desktop. It doesn't add anything to Steam: the mod lives in the game
+folder, so starting the game as usual with a headset connected starts it in
+VR. (Older versions added a "(VR)" entry to the Steam and SteamVR libraries;
+uninstalling removes it, which needs Steam closed and restarted.) The exe
+ships no mods itself: they're downloaded, or loaded from a file (closed betas).
 
 It only reads Steam's files on this PC: the registry, `libraryfolders.vdf`,
 `appmanifest_*.acf`, `loginusers.vdf` and the library art cache. It never calls
@@ -17,7 +20,7 @@ any online Steam API, so no account is looked up anywhere.
 engine/            Node engine: no Electron, testable on its own
   steam.js         Steam path, libraries, installed apps, art, accounts, start/stop
   vdf.js           text + binary KeyValues (shortcuts.vdf)
-  shortcuts.js     non-Steam "(VR)" shortcut (OpenVR flag, grid art), desktop .lnk
+  shortcuts.js     desktop .lnk; removes an older install's non-Steam "(VR)" shortcut and its grid art
   cfg.js           BepInEx .cfg editing
   options.js       shared options (left-handed, eye resolution)
   loaders.js       what each loader type puts in a game folder
@@ -47,9 +50,10 @@ node cli.js refresh         # fetch the list of mods (registry + each game's ind
 node cli.js list
 node cli.js releases tpm-vr # what you can install, and the recommended release
 node cli.js check           # can this PC run it? (GPU, SteamVR, VC++ runtime, power, RAM)
-node cli.js accounts
-node cli.js install tpm-vr [--version V] [--game-dir DIR] [--set eyeResolution=0.8] [--steam-account ID [--close-steam]] [--desktop] [--local]
-node cli.js uninstall tpm-vr [--game-dir DIR] [--close-steam]
+node cli.js accounts        # Steam accounts on this PC (for shortcut remove)
+node cli.js install tpm-vr [--version V] [--game-dir DIR] [--set eyeResolution=0.8] [--desktop] [--local]
+node cli.js uninstall tpm-vr [--game-dir DIR] [--close-steam]   # also removes an older install's Steam entry
+node cli.js shortcut remove tpm-vr --steam-account ID [--close-steam]
 node cli.js sideload <zip>  # load a mod file (e.g. a closed beta); it becomes active
 node cli.js versions tpm-vr # the versions on this PC
 node cli.js use tpm-vr <version|dev>
@@ -151,7 +155,7 @@ loads it by itself: the normal Steam entry stays flat, as before.
   there (the player's own UEVR setup) is kept: files we overwrite are backed
   up and put back on uninstall. Otherwise uninstall removes the whole
   profile, including what UEVR wrote there.
-- **"(VR)" entries** (Steam, SteamVR, desktop, and the app's Play button) run
+- **"(VR)" entries** (the desktop shortcut and the app's Play button) run
   `launch.ps1` through PowerShell, hidden, with the game's icon. It starts
   SteamVR if needed and stops with a message if there's no headset (UEVR sets
   up VR only once, when it attaches), starts the game through Steam, waits

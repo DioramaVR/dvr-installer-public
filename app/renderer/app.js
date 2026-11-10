@@ -10,7 +10,6 @@ const ipcError = (e) => String(e?.message || e).replace(/^Error invoking remote 
 
 const state = {
   games: [],
-  accounts: [],
   settings: {},
   pc: null,
   current: null, // id of the game whose page is open
@@ -21,7 +20,8 @@ const state = {
   pick: {},      // game id -> the version chosen in its picker ('local' = the one loaded from a file, or a dev build)
   remote: { offline: false, newerInstaller: null, announcements: [], errors: [] }, // the last refresh
   refreshing: false,
-  data: {},      // game id -> its data zip's contents (null: none, or not had); fetched when its page opens
+  data: {},      // game id -> its data zip's text and its media (null: none, or not had); fetched when its page opens
+  shot: {},      // game id -> the gallery picture shown
 };
 const game = () => state.games.find((g) => g.id === state.current);
 
@@ -64,7 +64,8 @@ function selected(g) {
   if (pick === 'local' && local) return local;
   if (pick && byVersion(pick)) return { local: false, ...byVersion(pick) };
   if (local) return local;
-  const r = byVersion(v.installedVersion) || byVersion(v.recommended?.version) || rels[0];
+  // An update first (the button then says "Update to ..."), else what's installed, else the recommendation.
+  const r = byVersion(v.updateAvailable?.version) || byVersion(v.installedVersion) || byVersion(v.recommended?.version) || rels[0];
   return r ? { local: false, ...r } : null;
 }
 // Something can be installed from the page: a public release, or a version loaded from a file (or a dev build).
@@ -73,13 +74,12 @@ const canOpen = (g) => g.owned && ((g.releases || []).length > 0 || !!g.active |
 const unavailable = (g) => g.unavailable === true && !(g.releases || []).length;
 
 async function load() {
-  [state.games, state.accounts, state.settings] = await Promise.all([api.status(), api.accounts(), api.getSettings()]);
+  [state.games, state.settings] = await Promise.all([api.status(), api.getSettings()]);
   for (const g of state.games) {
     const saved = state.settings.opts?.[g.id] || {};
     state.opts[g.id] = Object.fromEntries((g.options || []).map((o) => [o.id, g.installedOptions?.[o.id] ?? saved[o.id] ?? o.default]));
   }
   renderGrid();
-  renderAccount();
   renderBanners();
   const first = state.games.find((g) => g.owned) || state.games[0];
   if (first) setAmbient(first);
@@ -239,9 +239,10 @@ function sorted() {
   return state.games.map((g, i) => [g, i]).sort((a, b) => rank(a[0]) - rank(b[0]) || a[1] - b[1]).map(([g]) => g);
 }
 
-// ---------- a game's data zip ----------
+// ---------- a game's data zip and media ----------
 // Fetched by the engine when the game's page first opens (once per run here;
-// the engine keeps it until the index's hash changes). null: none, or it
+// the engine keeps them until the hashes change): the text from the data zip,
+// the media from the index's assets list (else the zip). null: none, or they
 // couldn't be had: the page shows the index alone, quietly.
 const playable = (url) => {
   const type = /\.mp4$/i.test(url || '') ? 'video/mp4' : /\.webm$/i.test(url || '') ? 'video/webm' : '';
@@ -257,21 +258,30 @@ async function loadData(g) {
   try { d = await api.gameData(g.id); } catch (e) { console.warn(`data for ${g.id}:`, ipcError(e)); }
   if (!d) return;
   state.data[g.id] = d;
-  // The card shows its line (and hover clip) from now on.
+  // The card shows its line from now on.
   const s = state.games.find((x) => x.id === g.id);
-  if (s) { s.line = d.line; s.hover = (d.media || []).find((m) => m.role === 'hover' && m.kind === 'video') || null; }
+  if (s) s.line = d.line || s.line;
   if (state.current === g.id && !$('game').hidden) renderGame();
 }
 // The page's text: the data zip's when it's here; else what an installed mod has.
 function info(g) {
-  const d = state.data[g.id];
+  const d = state.data[g.id]?.hasText === false ? null : state.data[g.id];
   return {
     line: d?.line || g.line || null,
     firstLaunch: d ? d.firstLaunch : g.firstLaunch || null,
     needToKnow: d ? d.needToKnow : g.needToKnow || [],
     tutorial: d ? d.tutorial : (g.tutorial || []).map((t) => ({ title: t.title, text: t.text })),
-    knownIssues: d?.knownIssues || g.knownIssues || [],
+    knownIssues: issuesShown(g, d),
   };
+}
+// The known issues for the version selected on the page (else the one the
+// engine chose): those since it and not yet fixed in it. The data zip's list
+// when it's here, else the index's.
+function issuesShown(g, d) {
+  const all = d?.allKnownIssues || g.allIssues;
+  const v = selected(g)?.version || g.issuesVersion;
+  if (!all || !v) return d?.knownIssues || g.knownIssues || [];
+  return all.filter((k) => (!k.since || compareVersions(k.since, v) <= 0) && (!k.fixedIn || compareVersions(v, k.fixedIn) < 0));
 }
 
 function card(g, i) {
@@ -287,19 +297,9 @@ function card(g, i) {
     <button class="go-launch" data-launch><svg viewBox="0 0 16 16"><path d="M5 3.5v9l7-4.5z"/></svg>Launch</button>
     <div class="meta"><div class="name">${esc(g.game)}</div>${g.line ? `<div class="line">${esc(g.line)}</div>` : ''}<div class="badges">${badgesFor(g)}</div>${store}</div>`;
   c.dataset.id = g.id;
-  // The data zip's hover clip, once it's cached, plays over the capsule.
-  c.addEventListener('mouseenter', () => {
-    setAmbient(g);
-    const src = videoUrl(g.hover);
-    if (!src || c.querySelector('.hover-video')) return;
-    const v = el('video', 'hover-video');
-    Object.assign(v, { muted: true, loop: true, playsInline: true, src });
-    v.setAttribute('aria-hidden', 'true');
-    v.onplaying = () => v.classList.add('on');
-    c.querySelector('.frame').appendChild(v);
-    v.play().catch(() => {});
-  });
-  c.addEventListener('mouseleave', () => { c.style.removeProperty('--rx'); c.style.removeProperty('--ry'); c.querySelector('.hover-video')?.remove(); });
+  // No video on hover: the card stays a still picture.
+  c.addEventListener('mouseenter', () => setAmbient(g));
+  c.addEventListener('mouseleave', () => { c.style.removeProperty('--rx'); c.style.removeProperty('--ry'); });
   c.addEventListener('mousemove', (e) => {
     if (!open) return;
     const r = c.getBoundingClientRect();
@@ -421,6 +421,38 @@ function optionRow(o, value, onChange) {
   return row;
 }
 
+// ---------- the gallery: every picture, one at a time, previous / next ----------
+const galleryOf = (g) => (state.data[g.id]?.media || []).filter((m) => m.role === 'gallery' && (m.kind === 'image' || videoUrl(m)));
+function renderGallery(g) {
+  const shots = galleryOf(g);
+  $('gallery').hidden = !shots.length;
+  const frame = $('galleryFrame');
+  if (!shots.length) { frame.innerHTML = ''; delete frame.dataset.src; return; }
+  const i = (((state.shot[g.id] || 0) % shots.length) + shots.length) % shots.length;
+  state.shot[g.id] = i;
+  const m = shots[i];
+  if (frame.dataset.src !== m.file) {
+    frame.dataset.src = m.file;
+    frame.innerHTML = m.kind === 'video'
+      ? `<video src="${esc(videoUrl(m))}" muted loop autoplay playsinline aria-label="${esc(m.alt)}"></video>`
+      : `<img src="${esc(m.file)}" alt="${esc(m.alt)}" draggable="false">`;
+  }
+  $('galleryCount').textContent = `${i + 1} / ${shots.length}`;
+  $('galleryPrev').hidden = $('galleryNext').hidden = shots.length < 2;
+}
+function stepGallery(by) {
+  const g = game();
+  if (!g) return;
+  state.shot[g.id] = (state.shot[g.id] || 0) + by;
+  renderGallery(g);
+}
+$('galleryPrev').addEventListener('click', () => stepGallery(-1));
+$('galleryNext').addEventListener('click', () => stepGallery(1));
+$('gallery').addEventListener('keydown', (e) => {
+  if (e.key === 'ArrowLeft') { stepGallery(-1); e.preventDefault(); }
+  if (e.key === 'ArrowRight') { stepGallery(1); e.preventDefault(); }
+});
+
 function renderGame() {
   const g = game();
   if (!g) return;
@@ -453,13 +485,8 @@ function renderGame() {
   $('needList').innerHTML = t.needToKnow.map((n) => `<p>${esc(n)}</p>`).join('');
   $('firstLaunch').hidden = !t.firstLaunch;
   $('firstLaunchText').textContent = t.firstLaunch || '';
-  const shots = (state.data[g.id]?.media || []).filter((m) => m.role === 'gallery');
-  $('gallery').hidden = !shots.length;
-  $('gallery').innerHTML = shots.map((m) => (m.kind === 'video'
-    ? (videoUrl(m) ? `<video src="${esc(videoUrl(m))}" muted loop autoplay playsinline title="${esc(m.alt)}"></video>` : '')
-    : `<img src="${esc(m.file)}" alt="${esc(m.alt)}" title="${esc(m.alt)}" loading="lazy" draggable="false">`)).join('');
+  renderGallery(g);
   $('gameBadges').innerHTML = badgesFor(g);
-  $('vrName').textContent = `${g.game} (VR)`;
 
   const warns = [];
   const vc = state.pc?.checks.find((c) => c.id === 'vcredist' && c.status === 'bad');
@@ -474,11 +501,7 @@ function renderGame() {
   box.parentElement.hidden = !(g.options || []).length;
   for (const o of g.options || []) box.appendChild(optionRow(o, state.opts[g.id][o.id], (v) => { state.opts[g.id][o.id] = v; }));
 
-  const hasAccounts = state.accounts.length > 0;
-  $('optSteam').disabled = !hasAccounts;
-  $('optSteam').checked = hasAccounts && state.settings.steam !== false;
-  $('optDesktop').checked = state.settings.desktop ?? !hasAccounts;
-  syncAccountRow();
+  $('optDesktop').checked = state.settings.desktop ?? false;
 
   renderDetailsNote(g);
   renderVersion();
@@ -504,7 +527,7 @@ function renderInstallButton() {
 // ---------- version: public releases, a file install, open betas ----------
 const MB = (n) => (n / 1048576 < 10 ? (n / 1048576).toFixed(1) : Math.round(n / 1048576));
 function releaseLabel(r) {
-  return `${r.version} · ${maturityLabel(r.maturity)}${r.tested ? ' · tested on your game' : ''}`;
+  return `${r.version} · ${maturityLabel(r.maturity)}`;
 }
 
 function renderVersion() {
@@ -529,7 +552,6 @@ function renderVersion() {
     if (sel.coreVersion) bits.push(`core ${sel.coreVersion}`);
     if (!sel.local && sel.size) bits.push(`${MB(sel.size)} MB download`);
     if (!sel.local && sel.date) bits.push(sel.date);
-    if (!sel.local && sel.tested) bits.push('tested on your copy of the game');
     if (isInstalled(g) && g.installedVersion === sel.version) bits.push('installed');
     else if (isInstalled(g) && g.installedVersion) bits.push(`${g.installedVersion} is installed now`);
     $('versionNote').textContent = bits.join(' · ') + (sel.notes ? `. ${sel.notes}` : '');
@@ -549,7 +571,10 @@ function renderVersion() {
   $('publicOffer').hidden = !offer;
   if (offer) $('publicOfferText').textContent = `A newer public version is available: ${g.updateAvailable.version} (${maturityLabel(g.updateAvailable.maturity)}).`;
 
-  $('betaRow').hidden = g.status === 'coming' && !rels.length;
+  // Only when there's a choice: a stable version and a newer open beta.
+  const beta = g.betaOffer;
+  $('betaRow').hidden = !beta;
+  if (beta) $('betaText').textContent = `${beta.version} is an open beta, newer than the stable ${beta.stableVersion}. It may still have bugs.`;
   $('optBeta').checked = !!g.optInBeta;
 }
 
@@ -689,50 +714,7 @@ $('loadBtn').addEventListener('click', () => { if (!busy()) afterLoad(api.sidelo
   });
 }
 
-function syncAccountRow() { $('accountRow').classList.toggle('disabled', !$('optSteam').checked); }
-$('optSteam').addEventListener('change', () => { state.settings.steam = $('optSteam').checked; syncAccountRow(); });
 $('optDesktop').addEventListener('change', () => { state.settings.desktop = $('optDesktop').checked; });
-
-// ---------- Steam account ----------
-// Machines can have more than one account (e.g. a second, private one), so
-// the one whose library gets the "(VR)" entries is always visible and chosen
-// here; the choice is remembered.
-const accountName = (a) => a.persona || `Account ${a.id}`;
-// Steam's own profile picture when it has one cached, else the first letter.
-const avatarHtml = (a) => (a.avatar ? `<img src="${esc(a.avatar)}" alt="">` : esc(accountName(a).trim()[0]?.toUpperCase() || '?'));
-const currentAccount = () => state.accounts.find((a) => a.id === state.settings.steamAccount);
-
-function renderAccount() {
-  if (!currentAccount() && state.accounts.length) state.settings.steamAccount = state.accounts[0].id;
-  const a = currentAccount();
-  $('acct').hidden = !a;
-  if (!a) return;
-  $('acctAv').innerHTML = avatarHtml(a);
-  $('acctAvInline').innerHTML = avatarHtml(a);
-  $('acctName').textContent = accountName(a);
-  $('acctInline').textContent = accountName(a);
-  $('acctChange').hidden = state.accounts.length < 2;
-  $('acctMenu').innerHTML = '<div class="hint">The "(VR)" entries go into this account\'s Steam library.</div>'
-    + state.accounts.map((x) => `<button class="acct-item${x.id === a.id ? ' on' : ''}" data-acct="${esc(x.id)}">
-      <span class="acct-av">${avatarHtml(x)}</span>
-      <span class="who"><b>${esc(accountName(x))}</b><small>${x.mostRecent ? 'Last signed in' : `Account ${esc(x.id)}`}</small></span><span class="tick"></span></button>`).join('');
-}
-
-function toggleAccountMenu(open = $('acctMenu').hidden) {
-  $('acctMenu').hidden = !open;
-  $('acct').classList.toggle('open', open);
-}
-$('acctBtn').addEventListener('click', (e) => { e.stopPropagation(); toggleAccountMenu(); });
-$('acctChange').addEventListener('click', (e) => { e.stopPropagation(); toggleAccountMenu(true); });
-$('acctMenu').addEventListener('click', (e) => {
-  const item = e.target.closest('[data-acct]');
-  if (!item) return;
-  state.settings.steamAccount = item.dataset.acct;
-  api.setSettings({ steamAccount: item.dataset.acct });
-  renderAccount();
-  toggleAccountMenu(false);
-});
-document.addEventListener('click', (e) => { if (!e.target.closest('#acct')) toggleAccountMenu(false); });
 
 // ---------- modal ----------
 function ask(title, body, buttons) {
@@ -772,7 +754,6 @@ api.onProgress((p) => {
   else if (p.stage === 'verify') setRing(42, 'Checking the download');
   else if (p.stage === 'copy') setRing(45 + (p.done / p.total) * 43, `Copying files · ${p.done} / ${p.total}`);
   else if (p.stage === 'config') setRing(90, 'Writing your settings');
-  else if (p.stage === 'steam') setRing(95, 'Adding to Steam & SteamVR');
   else if (p.stage === 'removing') setRing(50, 'Removing');
   else if (p.stage === 'done') setRing(100, 'Done');
   else if (p.stage === 'error') setRing(100, p.error);
@@ -785,8 +766,12 @@ function showProgress(title) {
   $('progressView').hidden = false;
 }
 
-// Steam only reads its library when it starts (and overwrites changes made while it runs).
-const STEAM_RESTART = 'Steam only reads its library when it starts. The app closes Steam, adds the entry, and starts Steam again for you; there\'s nothing you need to do.';
+// Installing never touches Steam: the mod lives in the game folder, so starting
+// the game as usual (headset connected) starts it in VR. Older installers added
+// a "<Game> (VR)" entry to Steam; uninstalling removes it, which needs Steam
+// closed (Steam only reads its library when it starts, and overwrites changes
+// made while it runs). Reinstalling or updating leaves it as it is.
+const STEAM_RESTART = 'Steam has to restart to take the "(VR)" entry out of your library. The app closes Steam and starts it again for you; there\'s nothing you need to do.';
 
 async function runInstall() {
   const g = game();
@@ -796,22 +781,14 @@ async function runInstall() {
       [{ label: 'Install anyway', value: 'anyway' }, { label: 'Download from Microsoft', value: 'download', primary: true }]);
     if (r === 'download') { api.openLink(vc.link.url); return; }
   }
-  let steam = $('optSteam').checked && !!currentAccount();
-  let closeSteam = false;
-  if (steam && (await api.steamRunning())) {
-    const r = await ask('Steam needs to restart', STEAM_RESTART,
-      [{ label: 'Skip the Steam entry', value: 'skip' }, { label: 'Close & restart Steam', value: 'close', primary: true }]);
-    closeSteam = r === 'close';
-    steam = closeSteam;
-  }
   // A public release is downloaded (version given); a local one (from a file, or a dev build) installs as it is.
   const sel = selected(g);
   if (!sel) return;
   const plan = {
     install: [{ modId: g.id, chosen: { ...state.opts[g.id] }, ...(sel.local ? {} : { version: sel.version }) }], uninstall: [],
-    steam, steamAccount: state.settings.steamAccount, closeSteam, desktop: $('optDesktop').checked,
+    desktop: $('optDesktop').checked,
   };
-  await api.setSettings({ opts: state.opts, steamAccount: plan.steamAccount, steam: $('optSteam').checked, desktop: plan.desktop });
+  await api.setSettings({ opts: state.opts, desktop: plan.desktop });
   const updating = isInstalled(g) && g.installedVersion && compareVersions(sel.version, g.installedVersion) > 0;
   showProgress(`${updating ? 'Updating' : 'Installing'} ${g.name} ${sel.version}…`);
   let results;
@@ -823,18 +800,18 @@ async function runInstall() {
 
 async function runUninstall() {
   const g = game();
-  const go = await ask(`Uninstall from ${g.game}?`, 'The VR mod and its Steam entry are removed. BepInEx is removed too, unless other mods use it. Your saves are never touched.',
+  const go = await ask(`Uninstall from ${g.game}?`, `The VR mod${g.steamShortcut ? ' and its Steam entry are' : ' is'} removed. BepInEx is removed too, unless other mods use it. Your saves are never touched.`,
     [{ label: 'Cancel', value: false }, { label: 'Uninstall', value: true, primary: true }]);
   if (!go) return;
   let closeSteam = false;
   if (g.steamShortcut && (await api.steamRunning())) {
-    closeSteam = await ask('Steam needs to restart', 'Steam has to restart to take the "(VR)" entry out of your library. The app closes Steam and starts it again for you; there\'s nothing you need to do.',
+    closeSteam = await ask('Steam needs to restart', STEAM_RESTART,
       [{ label: 'Cancel', value: null }, { label: 'Close & restart Steam', value: true, primary: true }]);
     if (closeSteam === null) return;
   }
   showProgress(`Uninstalling ${g.name}…`);
   let results;
-  try { results = await api.run({ install: [], uninstall: [g.id], closeSteam, steam: false }); } catch (e) { results = [{ modId: g.id, ok: false, error: ipcError(e) }]; }
+  try { results = await api.run({ install: [], uninstall: [g.id], closeSteam }); } catch (e) { results = [{ modId: g.id, ok: false, error: ipcError(e) }]; }
   await wait(600);
   showDone(results[0], { mode: 'uninstall' });
 }
@@ -863,10 +840,9 @@ function showDone(r, plan) {
   } else {
     const name = `${g.game} (VR)`;
     $('doneTitle').textContent = 'Ready';
-    $('doneLead').textContent = `Launch from ${plan.steam ? 'SteamVR' : plan.desktop ? 'your desktop' : 'here'}`;
+    $('doneLead').textContent = `Launch from ${plan.desktop ? 'your desktop' : 'here'}`;
     $('doneSub').textContent = `${g.name}${plan.version ? ` ${plan.version}` : ''} is installed.`;
-    const start = plan.steam ? `Click <b>${esc(name)}</b> in your SteamVR or Steam library`
-      : plan.desktop ? `Double-click <b>${esc(name)}</b> on your desktop` : null;
+    const start = plan.desktop ? `Double-click <b>${esc(name)}</b> on your desktop` : null;
     if (info(g).firstLaunch) $('doneNotes').innerHTML = `<div class="warn"><b>First start:</b> ${esc(info(g).firstLaunch)}</div>`;
     readyCtx = { start, canLaunch: !r.dryRun };
     renderReady();
@@ -989,11 +965,11 @@ let setToggle = () => {};
     Downloading: () => { const g = onGame(); showProgress(`Installing ${g.name} ${ver()}…`); setRing(26, `Downloading · ${MB(12.4 * 1048576)} / ${MB(19.1 * 1048576)} MB`); },
     Checking: () => { const g = onGame(); showProgress(`Installing ${g.name} ${ver()}…`); setRing(42, 'Checking the download'); },
     Progress: () => { const g = onGame(); showProgress(`Installing ${g.name} ${ver()}…`); setRing(70, 'Copying files · 74 / 120'); },
-    Ready: () => { onGame(); showDone({ ok: true }, { mode: 'install', steam: true, desktop: false, version: ver() }); $('doneView').dataset.test = '1'; onVr(); },
+    Ready: () => { onGame(); showDone({ ok: true }, { mode: 'install', desktop: true, version: ver() }); $('doneView').dataset.test = '1'; onVr(); },
     Removed: () => { onGame(); showDone({ ok: true }, { mode: 'uninstall' }); },
     Failed: () => { onGame(); showDone({ ok: false, error: 'This file is damaged or has been changed. Download it again.' }, { mode: 'install' }); },
     Popup: () => { onGame(); ask('Steam needs to restart', STEAM_RESTART,
-      [{ label: 'Skip the Steam entry', value: 'skip' }, { label: 'Close & restart Steam', value: 'close', primary: true }]); },
+      [{ label: 'Cancel', value: null }, { label: 'Close & restart Steam', value: true, primary: true }]); },
     // Sideloading: the drop overlay, and a zip the engine refused.
     Drop: () => { state.current = null; show('home'); $('dropZone').hidden = false; },
     'Load failed': () => { state.current = null; show('home'); ask("Couldn't load tpm-vr-0.1.0.zip",

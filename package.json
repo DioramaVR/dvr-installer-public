@@ -1,7 +1,7 @@
 {
   "name": "dvr-installer",
   "productName": "DioramaVR",
-  "version": "0.3.0",
+  "version": "0.4.0",
   "description": "Installs the free DioramaVR tabletop VR mods for Steam games",
   "author": "scrire",
   "license": "MIT",
@@ -40,6 +40,6 @@
     "electron-builder": "^25.1.8"
   },
   "dependencies": {
-    "dvr-package": "git+https://github.com/DioramaVR/dvr-package.git#v0.1.2"
+    "dvr-package": "git+https://github.com/DioramaVR/dvr-package.git#v0.1.3"
   }
 }

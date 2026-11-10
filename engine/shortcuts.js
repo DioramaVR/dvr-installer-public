@@ -1,32 +1,12 @@
-// "<Game> (VR)" entries: a non-Steam shortcut in one account's shortcuts.vdf,
-// flagged OpenVR so it also shows in the SteamVR library, plus an optional
-// Windows desktop shortcut. Steam rewrites shortcuts.vdf from memory when it
-// exits, so the file must only be changed while Steam is closed.
+// "<Game> (VR)" entries: the Windows desktop shortcut, and removing the
+// non-Steam shortcut older installers added to one account's shortcuts.vdf
+// (they no longer add one: the mod lives in the game folder, so the normal
+// game starts in VR). Steam rewrites shortcuts.vdf from memory when it exits,
+// so the file must only be changed while Steam is closed.
 const fs = require('fs');
 const path = require('path');
 const { execFileSync } = require('child_process');
 const vdf = require('./vdf');
-
-const CRC_TABLE = (() => {
-  const t = new Uint32Array(256);
-  for (let n = 0; n < 256; n++) {
-    let c = n;
-    for (let k = 0; k < 8; k++) c = c & 1 ? 0xedb88320 ^ (c >>> 1) : c >>> 1;
-    t[n] = c >>> 0;
-  }
-  return t;
-})();
-
-function crc32(str) {
-  let c = 0xffffffff;
-  for (const b of Buffer.from(str, 'utf8')) c = CRC_TABLE[(c ^ b) & 0xff] ^ (c >>> 8);
-  return (c ^ 0xffffffff) >>> 0;
-}
-
-// The id Steam uses for a non-Steam shortcut (and its grid art file names).
-function shortcutAppId(exe, name) {
-  return (crc32(exe + name) | 0x80000000) >>> 0;
-}
 
 const vdfPath = (steamDir, accountId) => path.join(steamDir, 'userdata', accountId, 'config', 'shortcuts.vdf');
 
@@ -52,46 +32,6 @@ function backup(file) {
   return bak;
 }
 
-const sameEntry = (e, name, exeQuoted) => {
-  const n = e.AppName ?? e.appname;
-  const x = e.Exe ?? e.exe;
-  return n === name || (x && x.toLowerCase() === exeQuoted.toLowerCase() && String(n).endsWith('(VR)'));
-};
-
-// Adds (or replaces) the shortcut. Returns { appid, backup }.
-function addSteamShortcut({ steamDir, accountId, name, exe, startDir, launchArgs, icon, art }) {
-  const file = vdfPath(steamDir, accountId);
-  fs.mkdirSync(path.dirname(file), { recursive: true });
-  const data = read(file);
-  const exeQuoted = `"${exe}"`;
-  const appid = shortcutAppId(exeQuoted, name);
-  const kept = Object.values(data.shortcuts).filter((e) => !sameEntry(e, name, exeQuoted));
-  kept.push({
-    appid: { int: appid | 0 },
-    AppName: name,
-    Exe: exeQuoted,
-    StartDir: `"${startDir}"`,
-    icon: icon || exe,
-    ShortcutPath: '',
-    LaunchOptions: launchArgs || '',
-    IsHidden: { int: 0 },
-    AllowDesktopConfig: { int: 1 },
-    AllowOverlay: { int: 1 },
-    OpenVR: { int: 1 },
-    Devkit: { int: 0 },
-    DevkitGameID: '',
-    DevkitOverrideAppID: { int: 0 },
-    LastPlayTime: { int: 0 },
-    FlatpakAppID: '',
-    tags: { 0: 'VR' },
-  });
-  const bak = backup(file);
-  data.shortcuts = renumber(kept);
-  fs.writeFileSync(file, vdf.serializeBinary(data));
-  if (art) copyGridArt(steamDir, accountId, appid, art);
-  return { appid, backup: bak };
-}
-
 function removeSteamShortcut({ steamDir, accountId, name, appid }) {
   const file = vdfPath(steamDir, accountId);
   if (!fs.existsSync(file)) return { removed: false };
@@ -109,17 +49,9 @@ function removeSteamShortcut({ steamDir, accountId, name, appid }) {
   return { removed: true, backup: bak };
 }
 
-// Gives the shortcut the real game's library art: Steam looks these up by the
-// shortcut's appid in userdata/<id>/config/grid/.
+// The library art older installers gave the shortcut: Steam looks these up by
+// the shortcut's appid in userdata/<id>/config/grid/.
 const GRID = { capsule: 'p.jpg', hero: '_hero.jpg', logo: '_logo.png', header: '.jpg' };
-
-function copyGridArt(steamDir, accountId, appid, art) {
-  const grid = path.join(steamDir, 'userdata', accountId, 'config', 'grid');
-  fs.mkdirSync(grid, { recursive: true });
-  for (const [k, suffix] of Object.entries(GRID)) {
-    if (art[k]) { try { fs.copyFileSync(art[k], path.join(grid, appid + suffix)); } catch { } }
-  }
-}
 
 function removeGridArt(steamDir, accountId, appid) {
   const grid = path.join(steamDir, 'userdata', accountId, 'config', 'grid');
@@ -161,6 +93,6 @@ function desktopDir() {
 }
 
 module.exports = {
-  crc32, shortcutAppId, vdfPath, addSteamShortcut, removeSteamShortcut, listSteamShortcuts,
+  vdfPath, removeSteamShortcut, listSteamShortcuts,
   addDesktopShortcut, desktopDir,
 };

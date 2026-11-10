@@ -15,15 +15,20 @@ const loadSettings = () => { try { return JSON.parse(fs.readFileSync(settingsFil
 const saveSettings = (s) => fs.writeFileSync(settingsFile(), JSON.stringify(s, null, 2));
 
 // The renderer only gets art://app/<appid>/<kind> URLs, served from Steam's
-// local library cache (or the mod's own folder for videos), and
-// art://avatar/<accountId> from Steam's local avatar cache; no other file is
-// reachable. (A bare numeric host would be parsed as an IPv4 address.)
+// local library cache (or the mod's own folder for videos), and a game's
+// cached data and media files (below); no other file is reachable. (A bare
+// numeric host would be parsed as an IPv4 address.)
 let statusCache = [];
-let accountCache = [];
 function artUrl(appid, kind) { return `art://app/${appid}/${kind}`; }
 // A file from a game's data zip (cached by the engine): art://data/<mod id>/media/<name>.
 const dataUrl = (id, file) => (typeof file === 'string' && /^media\/[^/\\]+$/.test(file) ? `art://data/${id}/${file.split('/').map(encodeURIComponent).join('/')}` : null);
-const dataMedia = (id, m) => m && { ...m, file: dataUrl(id, m.file), poster: dataUrl(id, m.poster), sources: (m.sources || []).map((f) => dataUrl(id, f)).filter(Boolean) };
+// A file of the index's assets list (cached by the engine): art://assets/<mod id>/<name>.
+const assetUrl = (id, file) => (typeof file === 'string' && /^[a-z0-9][a-z0-9._-]*$/.test(file) ? `art://assets/${id}/${encodeURIComponent(file)}` : null);
+const mediaUrls = (id, m, from) => {
+  const url = from === 'assets' ? assetUrl : dataUrl;
+  return m && { ...m, file: url(id, m.file), poster: url(id, m.poster), sources: (m.sources || []).map((f) => url(id, f)).filter(Boolean) };
+};
+const dataMedia = (id, m) => mediaUrls(id, m, 'data');
 
 // "Closed beta" etc.; the engine owns the wording.
 const maturityLabel = (m) => (m ? (engine.maturityLabel ? engine.maturityLabel(m) : m) : null);
@@ -35,7 +40,7 @@ function publicStatus() {
     // Games the registry lists but this PC doesn't have may have no art.
     art: Object.fromEntries(Object.keys(s.art || {}).map((k) => [k, artUrl(s.appid, k)])),
     video: s.video && fs.existsSync(s.video) ? artUrl(s.appid, 'video') : null,
-    hover: s.hover ? dataMedia(s.id, s.hover) : null,
+    hover: s.hover?.media ? mediaUrls(s.id, s.hover.media, s.hover.from) : null,
   }));
 }
 
@@ -111,12 +116,14 @@ app.whenReady().then(() => {
   protocol.handle('art', (req) => {
     const u = new URL(req.url);
     let file;
-    if (u.host === 'avatar') {
-      file = accountCache.find((a) => a.id === u.pathname.slice(1))?.avatar;
-    } else if (u.host === 'data') {
+    if (u.host === 'data') {
       // Only files the engine has cached for the game's current data hash.
       const [id, ...rest] = u.pathname.split('/').slice(1).map(decodeURIComponent);
       file = engine.gameDataFile ? engine.gameDataFile(id, rest.join('/')) : null;
+    } else if (u.host === 'assets') {
+      // Only files of the index's assets list, cached and of the right size.
+      const [id, name, ...more] = u.pathname.split('/').slice(1).map(decodeURIComponent);
+      file = !more.length && engine.gameAssetFile ? engine.gameAssetFile(id, name) : null;
     } else {
       const [appid, kind] = u.pathname.split('/').slice(1);
       const s = statusCache.find((x) => String(x.appid) === appid);
@@ -144,13 +151,9 @@ app.on('window-all-closed', () => app.quit());
 const send = (ch, data) => win && !win.isDestroyed() && win.webContents.send(ch, data);
 
 ipcMain.handle('status', () => publicStatus());
-ipcMain.handle('accounts', () => {
-  const steamDir = engine.steam.findSteam();
-  accountCache = steamDir ? engine.steam.accounts(steamDir) : [];
-  return accountCache.map((a) => ({ id: a.id, persona: a.persona, mostRecent: a.mostRecent, avatar: a.avatar ? `art://avatar/${a.id}` : null }));
-});
 ipcMain.handle('settings:get', () => loadSettings());
 ipcMain.handle('settings:set', (_, s) => saveSettings({ ...loadSettings(), ...s }));
+// Uninstall asks before closing Steam to remove an older install's "(VR)" entry.
 ipcMain.handle('steam:running', () => engine.steam.steamRunning());
 ipcMain.handle('open-store', (_, appid) => shell.openExternal(`https://store.steampowered.com/app/${Number(appid)}/`));
 ipcMain.handle('preflight', () => engine.preflight.check());
@@ -252,7 +255,7 @@ ipcMain.handle('game-data', async (_, modId) => {
   const id = String(modId);
   try {
     const d = await engine.gameData(id);
-    return d ? { ...d, media: (d.media || []).map((m) => dataMedia(id, m)).filter((m) => m.file) } : null;
+    return d ? { ...d, media: (d.media || []).map((m) => mediaUrls(id, m, d.mediaFrom)).filter((m) => m.file) } : null;
   } catch (e) {
     console.warn(`data for ${id}:`, e.message);
     return null;
@@ -291,14 +294,16 @@ async function dryRun(plan) {
     for (let done = 0; done <= total; done += 4) { send('progress', { modId, stage: 'copy', done, total }); await pause(60); }
     send('progress', { modId, stage: 'config' });
     await pause(400);
-    if (plan.steam) { send('progress', { modId, stage: 'steam' }); await pause(500); }
     send('progress', { modId, stage: 'done' });
     results.push({ modId, action: 'install', ok: true, dryRun: true });
   }
   return results;
 }
 
-// plan: { install: [{ modId, chosen }], uninstall: [modId], steamAccount, steam: bool, desktop: bool, closeSteam: bool }
+// plan: { install: [{ modId, chosen, version }], uninstall: [modId], desktop: bool, closeSteam: bool }
+// Install never touches Steam. Uninstall removes the "(VR)" Steam entry an
+// older installer added (the manifest's steamShortcut), which needs Steam
+// closed: closeSteam says the player agreed to close and restart it.
 ipcMain.handle('run', async (_, plan) => {
   // DVR_DRY_RUN=1: the real Steam, games and accounts are shown, but nothing is changed.
   // The progress screens play through as if it ran, then report that it didn't.
@@ -306,12 +311,11 @@ ipcMain.handle('run', async (_, plan) => {
   const steamDir = engine.steam.findSteam();
   const results = [];
   const status = engine.status();
-  const touchesSteam = plan.steam && plan.steamAccount && (plan.install.length || plan.uninstall.length);
   const removing = plan.uninstall.some((id) => status.find((s) => s.id === id)?.steamShortcut);
   let restartSteam = false;
   const step = (modId, stage, extra = {}) => send('progress', { modId, stage, ...extra });
 
-  if ((touchesSteam || removing) && engine.steam.steamRunning()) {
+  if (removing && engine.steam.steamRunning()) {
     if (!plan.closeSteam) throw new Error('Steam is running');
     step(null, 'closing-steam');
     if (!(await engine.steam.closeSteam(steamDir))) throw new Error("Steam didn't close. Close it yourself and try again.");
@@ -341,7 +345,6 @@ ipcMain.handle('run', async (_, plan) => {
       } else {
         await engine.install({ modId, gameDir: s.gameDir, chosen, onProgress });
       }
-      if (touchesSteam) { step(modId, 'steam'); engine.addSteamEntry({ modId, gameDir: s.gameDir, accountId: plan.steamAccount }); }
       if (plan.desktop) engine.addDesktopEntry({ modId, gameDir: s.gameDir });
       step(modId, 'done');
       results.push({ modId, action: 'install', ok: true });

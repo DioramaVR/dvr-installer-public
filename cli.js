@@ -5,11 +5,11 @@
 // node cli.js check            (can this PC run it?)
 // node cli.js accounts
 // node cli.js install <mod> [--version V] [--game-dir DIR] [--set key=value ...]
-//                           [--steam-account ID] [--desktop] [--local]
+//                           [--desktop] [--local]
 //     downloads the release (default: the recommended one) and installs it;
 //     --local installs the active version on this PC instead (a loaded file, a dev build)
 // node cli.js uninstall <mod> [--game-dir DIR]
-// node cli.js shortcut add|remove <mod> --steam-account ID [--game-dir DIR]
+// node cli.js shortcut remove <mod> --steam-account ID   (an older install's "(VR)" Steam entry)
 // node cli.js sideload <zip>             (load a mod file, e.g. a closed beta; it becomes active)
 // node cli.js versions <mod> [--game-dir DIR]   (the versions on this PC)
 // node cli.js use <mod> <version|dev>    (reinstall to apply it to the game)
@@ -156,12 +156,6 @@ const commands = {
       m = await engine.install({ modId: st.id, gameDir, chosen: flags.set, onProgress });
     }
     console.log(`Copied ${m.files.length} files. Version ${m.version}. Options: ${JSON.stringify(m.options)}`);
-    if (flags.steamAccount) {
-      await withSteamClosed(flags, () => {
-        const r = engine.addSteamEntry({ modId: st.id, gameDir, accountId: String(flags.steamAccount) });
-        console.log(`Added "${engine.vrName(engine.getMod(st.id))}" to Steam (backup: ${r.backup || 'none needed'}).`);
-      });
-    }
     if (flags.desktop) console.log(`Desktop shortcut: ${engine.addDesktopEntry({ modId: st.id, gameDir })}`);
   },
 
@@ -231,12 +225,10 @@ const commands = {
     if (!flags.steamAccount) throw new Error('Pass --steam-account ID (see "node cli.js accounts").');
     const accountId = String(flags.steamAccount);
     await withSteamClosed(flags, () => {
-      if (action === 'add') {
-        const r = engine.addSteamEntry({ modId, gameDir: gameDirFor(modId, flags), accountId });
-        console.log(`Added (appid ${r.appid}, backup ${r.backup || 'none'})`);
-      } else if (action === 'remove') {
+      // Adding is gone: the mod lives in the game folder, so the normal game starts in VR.
+      if (action === 'remove') {
         console.log(engine.removeSteamEntry({ modId, accountId }).removed ? 'Removed' : 'Not found');
-      } else throw new Error('shortcut add|remove');
+      } else throw new Error('shortcut remove');
     });
   },
 };
