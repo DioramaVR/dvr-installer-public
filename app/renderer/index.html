@@ -6,7 +6,7 @@
   <title>DioramaVR</title>
   <link rel="stylesheet" href="styles.css">
 </head>
-<body>
+<body class="games-loading">
   <div class="ambient" aria-hidden="true"><canvas class="warp" id="warp"></canvas><div class="ambient-img" id="ambientA"></div><div class="ambient-img" id="ambientB"></div></div>
 
   <header class="titlebar">
@@ -35,11 +35,11 @@
           <span class="pc-status checking" id="pcStatus">Checking…</span>
           <button class="pc-more" id="pcMore" hidden>Details</button>
         </div>
-        <div class="pc-tiles" id="pcTiles"></div>
+        <div class="pc-tiles" id="pcTiles"><div class="pc-tile skeleton"></div><div class="pc-tile skeleton"></div><div class="pc-tile skeleton"></div><div class="pc-tile skeleton"></div></div>
         <div class="pc-details" id="pcDetails" hidden></div>
       </div>
       <p class="list-note" id="listNote" hidden></p>
-      <div class="grid" id="grid"></div>
+      <div class="grid" id="grid"><div class="grid-loading" role="status" aria-label="Loading the games"><div class="spinner"></div></div></div>
       <footer class="made-by">free mods made by <span class="flame-word" aria-label="scrire">scrıre<canvas class="flame" data-flame aria-hidden="true"></canvas></span></footer>
       <footer class="foot"><button class="foot-link" id="creditsLink">Credits and licences: UEVR, BepInEx, the .NET runtime and others</button></footer>
     </div>
@@ -105,7 +105,6 @@
           <img class="game-logo" id="gameLogo" alt="">
           <h1 id="gameName"></h1>
         </div>
-        <p class="game-line" id="gameLine" hidden></p>
         <div class="badges" id="gameBadges"></div>
         <p class="details-note" id="detailsNote" hidden>The mod's settings appear here once it's installed.</p>
         <button class="howto" id="howtoBtn" hidden><svg viewBox="0 0 20 20"><circle cx="10" cy="10" r="8"/><path d="M7.8 7.6a2.3 2.3 0 0 1 4.4.9c0 1.5-2.2 1.9-2.2 3.2M10 14.3v.2"/></svg><span><b>See how to play in VR</b></span><svg class="go" viewBox="0 0 20 20"><path d="M4 10h11M11 5l5 5-5 5"/></svg></button>

@@ -101,6 +101,12 @@ button { font: inherit; color: inherit; }
   background: rgba(24, 26, 37, .7); font-size: 12px; font-weight: 600; cursor: pointer; transition: background .2s, border-color .2s; }
 .store-link:hover { background: rgba(245, 240, 232, .16); border-color: rgba(245, 240, 232, .5); }
 .store-link svg { width: 11px; height: 11px; fill: none; stroke: currentColor; stroke-width: 2; }
+/* The games still loading: one spinner where the cards go. */
+.grid-loading { grid-column: 1 / -1; display: grid; place-items: center; min-height: 300px; animation: fade .4s both; }
+.spinner { width: 34px; height: 34px; border-radius: 50%; border: 3px solid transparent; border-top-color: var(--pink); animation: spin .8s linear infinite; }
+@keyframes spin { to { transform: rotate(360deg); } }
+.games-loading .made-by, .games-loading .foot { display: none; }
+.made-by, .foot { animation: fade .5s both; }
 .card.ghost { cursor: default; border: 1.5px dashed rgba(245, 240, 232, .14); box-shadow: none; display: grid; place-items: center; text-align: center; padding: 24px; color: var(--dim); }
 .card.ghost:hover { transform: none; box-shadow: none; }
 .card.ghost b { display: block; color: var(--muted); font: 400 17px/1.2 var(--display); margin: 12px 0 6px; }
@@ -558,8 +564,6 @@ body.solid-bg .warp { display: none; }
 .credits-disclaimer { margin: 0; color: var(--dim); font-size: 12px; max-width: 72ch; }
 
 /* The game's data zip and media: its line, first start, gallery viewer, hover clip */
-.card .meta .line { margin: 2px 0 8px; color: var(--muted); font-size: 12px; line-height: 1.35; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
-.game-line { margin: -4px auto 14px; max-width: 46ch; text-align: center; color: var(--muted); font-size: 15px; line-height: 1.45; }
 .need.first { background: rgba(245, 240, 232, .05); border-color: var(--line); }
 .need.first b { color: var(--ink); }
 .need.first p { color: var(--ink); }

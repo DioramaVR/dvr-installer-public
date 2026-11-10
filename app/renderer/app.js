@@ -20,6 +20,7 @@ const state = {
   pick: {},      // game id -> the version chosen in its picker ('local' = the one loaded from a file, or a dev build)
   remote: { offline: false, newerInstaller: null, announcements: [], errors: [] }, // the last refresh
   refreshing: false,
+  firstList: true, // the registry not read yet this run: a spinner where the games go
   data: {},      // game id -> its data zip's text and its media (null: none, or not had); fetched when its page opens
   shot: {},      // game id -> the gallery picture shown
 };
@@ -73,6 +74,10 @@ const canOpen = (g) => g.owned && ((g.releases || []).length > 0 || !!g.active |
 // Listed, but its index couldn't be read (offline with no cache, or a bad signature): no versions to offer now.
 const unavailable = (g) => g.unavailable === true && !(g.releases || []).length;
 
+// true keeps the spinner on, to look at it (never in a release).
+const PREVIEW_LOADING = false;
+const loadingGames = () => PREVIEW_LOADING || (state.firstList && !!api.refresh);
+
 async function load() {
   [state.games, state.settings] = await Promise.all([api.status(), api.getSettings()]);
   for (const g of state.games) {
@@ -93,6 +98,7 @@ async function refresh(force = false) {
   renderBanners();
   try { state.remote = { ...state.remote, ...(await api.refresh({ force })) }; } catch (e) { state.remote = { ...state.remote, offline: true, errors: [{ what: 'refresh', error: ipcError(e) }] }; }
   state.refreshing = false;
+  state.firstList = false;
   await load();
   if (state.current && !$('game').hidden) renderGame();
 }
@@ -196,13 +202,13 @@ function setAmbient(g) {
 
 // ---------- gallery ----------
 const badge = (cls, text, title) => `<span class="badge ${cls}"${title ? ` title="${esc(title)}"` : ''}>${esc(text)}</span>`;
-const comingText = (g) => (g.closedBeta ? 'In closed beta on Patreon' : 'Coming');
+const comingText = (g) => (g.closedBeta ? 'In closed beta on Patreon' : 'On its way');
 
 function badgesFor(raw) {
   const g = view(raw);
   const out = [];
   const installed = isInstalled(g);
-  // A game with nothing public yet: "Coming", unless the player loaded a closed-beta file for it.
+  // A game with nothing public yet: "On its way", unless the player loaded a closed-beta file for it.
   if (g.status === 'coming' && !g.active && !installed) {
     out.push(badge('coming', comingText(g)));
     if (!g.owned) out.push(badge('missing', 'Not installed on this PC'));
@@ -295,7 +301,7 @@ function card(g, i) {
   c.innerHTML = `<div class="frame">${img}<div class="shade"></div><div class="shine"></div></div><div class="ring"></div>
     <div class="go"><svg viewBox="0 0 16 16"><path d="M6 3.5L10.5 8 6 12.5"/></svg></div>
     <button class="go-launch" data-launch><svg viewBox="0 0 16 16"><path d="M5 3.5v9l7-4.5z"/></svg>Launch</button>
-    <div class="meta"><div class="name">${esc(g.game)}</div>${g.line ? `<div class="line">${esc(g.line)}</div>` : ''}<div class="badges">${badgesFor(g)}</div>${store}</div>`;
+    <div class="meta"><div class="name">${esc(g.game)}</div><div class="badges">${badgesFor(g)}</div>${store}</div>`;
   c.dataset.id = g.id;
   // No video on hover: the card stays a still picture.
   c.addEventListener('mouseenter', () => setAmbient(g));
@@ -322,6 +328,10 @@ function card(g, i) {
 function renderGrid() {
   const grid = $('grid');
   grid.innerHTML = '';
+  // Until the list of games is in: a spinner where they go; then they all come in together.
+  // The 'made by' line and the credits link wait for the games too.
+  document.body.classList.toggle('games-loading', loadingGames());
+  if (loadingGames()) { grid.innerHTML = '<div class="grid-loading" role="status" aria-label="Loading the games"><div class="spinner"></div></div>'; return; }
   let i = 0;
   for (const g of sorted()) grid.appendChild(card(g, i++));
   const ghost = el('div', 'card ghost', '<div><div class="plus">+</div><b>More games coming</b>New mods appear here as they\'re released, or when you load one from a file.</div>');
@@ -478,8 +488,6 @@ function renderGame() {
   $('gameName').hidden = !!art.logo;
   $('gameName').textContent = g.game;
   const t = info(g);
-  $('gameLine').hidden = !t.line;
-  $('gameLine').textContent = t.line || '';
   $('howtoBtn').hidden = !t.tutorial.length;
   $('needToKnow').hidden = !t.needToKnow.length;
   $('needList').innerHTML = t.needToKnow.map((n) => `<p>${esc(n)}</p>`).join('');
@@ -1024,6 +1032,7 @@ let setToggle = () => {};
 }
 
 // The gallery from what's known now, then again once the registry has been read.
+renderGrid();
 load().then(() => refresh());
 loadPc();
 pollVr();

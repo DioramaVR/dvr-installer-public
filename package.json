@@ -1,7 +1,7 @@
 {
   "name": "dvr-installer",
   "productName": "DioramaVR",
-  "version": "0.4.0",
+  "version": "0.4.1",
   "description": "Installs the free DioramaVR tabletop VR mods for Steam games",
   "author": "scrire",
   "license": "MIT",
