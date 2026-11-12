@@ -16,6 +16,7 @@ const fs = require('fs');
 const path = require('path');
 const cfg = require('./cfg');
 const uevr = require('./uevr');
+const folders = require('./folders');
 
 const gameExe = (mod, gameDir) => path.join(gameDir, mod.exe);
 const direct = (mod, gameDir) => {
@@ -79,12 +80,38 @@ const uevrLoader = {
   },
 };
 
+// A game with mod support of its own (Timberborn) loads mods from a folder
+// of its own: mod.json folder {target, path} (dvr-package SPEC section 3).
+// Payload <plugin.folder>/X goes to <target>/<path>/X, and every other
+// payload path P (licenses/...) to <target>/<path>/P: nothing outside it.
+// There's no loader to share, download or configure, so uninstall removes
+// exactly the files installed (and folders left empty), keeping anything the
+// player or the game added. The game starts as usual (launch args).
+const underFolder = (rel, root) => rel.toLowerCase() === root.toLowerCase() || rel.toLowerCase().startsWith(root.toLowerCase() + '/');
+const folderLoader = {
+  roots: [],
+  removeRoots: () => [],
+  dest(mod, gameDir, rel) {
+    const base = folders.modFolder(mod, gameDir);
+    const own = mod.plugin.folder;
+    const inner = rel.toLowerCase() === own.toLowerCase() ? '' : underFolder(rel, own) ? rel.slice(own.length + 1) : rel;
+    return inner ? path.join(base, ...inner.split('/')) : base;
+  },
+  installed: () => false,
+  // Installed means the mod's folder is still there (the player may delete it).
+  present: (gameDir, mod) => fs.existsSync(folders.modFolder(mod, gameDir)),
+  loaderConfig: null,
+  writeConfig: () => { throw new Error('a folder mod has no loader to configure'); },
+  otherPlugins: () => [],
+  launch: direct,
+  extraFiles: async () => [],
+};
+
 const LOADERS = {
   'bepinex6-il2cpp': bepinex(['BepInEx', 'dotnet', 'winhttp.dll', 'doorstop_config.ini', '.doorstop_version']),
   'bepinex5-mono': bepinex(['BepInEx', 'winhttp.dll', 'doorstop_config.ini', '.doorstop_version']),
   uevr: uevrLoader,
-  // Timberborn loads mods from Documents\Timberborn\Mods itself; planned.
-  'timberborn-mod': null,
+  folder: folderLoader,
 };
 
 function get(type) {

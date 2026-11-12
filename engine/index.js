@@ -7,6 +7,7 @@ const steam = require('./steam');
 const shortcuts = require('./shortcuts');
 const options = require('./options');
 const loaders = require('./loaders');
+const folders = require('./folders');
 const cfg = require('./cfg');
 const preflight = require('./preflight');
 const vr = require('./vr');
@@ -316,6 +317,10 @@ function runnableCheck(expect = {}) {
     for (const k of ['name', 'game', 'exe']) if (typeof mod[k] !== 'string' || !mod[k]) throw refuse('not-a-mod', `its mod.json has no ${k}`);
     if (!mod.plugin?.folder) throw refuse('not-a-mod', 'its mod.json has no plugin folder');
     try { loaders.get(mod.loader?.type); } catch (e) { throw refuse('format', e.message); }
+    if (mod.loader?.type === 'folder') {
+      const p = folders.folderProblem(mod.folder);
+      if (p) throw refuse('unsafe-path', p);
+    }
     const known = dev.find((b) => b.id === m.id) || remoteGame(m.id);
     if (known && known.appid !== m.appid) throw refuse('not-a-mod', `it says ${m.id} is for appid ${m.appid}, but ${m.id} is for ${known.appid}`);
     if (expect.id && m.id !== expect.id) throw refuse('not-a-mod', `the index's ${expect.id} download is a package for ${m.id}`);
@@ -407,7 +412,10 @@ function status({ gameDirs = {} } = {}) {
     if (gameDirs[id]) game = { dir: gameDirs[id], buildid: null, manual: true };
     else if (steamDir) game = steam.findApp(steamDir, appid);
     if (game && mod && !fs.existsSync(path.join(game.dir, mod.exe))) game = null;
-    const manifest = game ? readManifest(game.dir, { id }) : null;
+    let manifest = game ? readManifest(game.dir, { id }) : null;
+    // A loader that can tell (a folder mod): installed only while its files are
+    // still there; the player may have deleted the mod's folder.
+    if (manifest && !installedHere(manifest, game.dir)) manifest = null;
     const optInBeta = remote.betaOptIn(id);
     const index = g?.index || null;
     const buildid = game?.buildid || null;
@@ -647,10 +655,20 @@ async function install({ modId, gameDir, chosen = {}, onProgress = () => {} }) {
   return manifest;
 }
 
+// Is what the manifest records still there? Only a loader with present()
+// can tell (a folder mod); for the others the manifest is enough.
+function installedHere(manifest, gameDir) {
+  const info = manifest.modInfo;
+  let loader;
+  try { loader = loaders.get(info?.loader?.type || manifest.loader?.type); } catch { return true; }
+  if (!loader.present || !info) return true;
+  try { return loader.present(gameDir, info); } catch { return false; }
+}
+
 // The parts of mod.json that install and uninstall use, kept in the game's
 // .dvr manifest.
 function modInfo(mod) {
-  const keep = ['id', 'name', 'game', 'appid', 'exe', 'loader', 'plugin', 'uevr', 'launchArgs'];
+  const keep = ['id', 'name', 'game', 'appid', 'exe', 'loader', 'plugin', 'uevr', 'folder', 'launchArgs'];
   return JSON.parse(JSON.stringify(Object.fromEntries(keep.map((k) => [k, mod[k]]))));
 }
 
@@ -677,8 +695,10 @@ function pruneEmptyDirs(dest, rels) {
     let d = path.posix.dirname(rel);
     while (d && d !== '.') { dirs.add(d); d = path.posix.dirname(d); }
   }
-  [...dirs].sort((a, b) => b.length - a.length).forEach((d) => {
-    try { fs.rmdirSync(dest(d)); } catch { /* not empty */ }
+  // Deepest first by where each really is: a loader may map a short path to a
+  // deeper place (a folder mod's own folder holds its licences folder).
+  [...new Set([...dirs].map((d) => dest(d)))].sort((a, b) => b.length - a.length).forEach((p) => {
+    try { fs.rmdirSync(p); } catch { /* not empty */ }
   });
 }
 

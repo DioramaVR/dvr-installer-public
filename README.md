@@ -24,6 +24,7 @@ engine/            Node engine: no Electron, testable on its own
   cfg.js           BepInEx .cfg editing
   options.js       shared options (left-handed, eye resolution)
   loaders.js       what each loader type puts in a game folder
+  folders.js       base folders a folder mod can name (Documents, the game)
   uevr.js          downloads + caches the pinned UEVR release; UEVR config.txt
   uevr-launch.ps1  the launcher the "(VR)" entries run for UEVR mods
   index.js         status / refresh / installRelease / install / uninstall / Steam entries / sideload / versions
@@ -131,8 +132,7 @@ game's library art in `config/grid/`.
 ## Adding a mod
 
 Add `mods/<id>/mod.json` (see `mods/tpm-vr/mod.json`) and a `build.json`. Loader
-types are `bepinex6-il2cpp`, `bepinex5-mono` and `uevr` (below). `timberborn-mod` is reserved but
-not implemented yet. A mod can ship a `video` (path in its folder): a diorama
+types are `bepinex6-il2cpp`, `bepinex5-mono`, `uevr` and `folder` (below). A mod can ship a `video` (path in its folder): a diorama
 turntable clip with alpha (`mods/tpm-vr/hover.webm`), kept for a planned per-game
 view where it would fill the background. The cards themselves use the game art.
 
@@ -166,6 +166,32 @@ loads it by itself: the normal Steam entry stays flat, as before.
 - **build.json** takes `repo` and `archive` (the mod repo's last commit),
   `steps` (commands run in that copy, e.g. zig for the menu plugin) and
   `profileFiles` (profile path: path in the copy).
+
+## Folder mods (games with their own mod support)
+
+For a game that loads mods from a folder of its own (Timberborn:
+`Documents\Timberborn\Mods\<mod>`), one general type, `folder`, so the next
+such game needs only data, no new code (dvr-package SPEC section 3, 0.1.5).
+`test/folder.test.js` has a complete example mod.json.
+
+- **mod.json:** `loader: { type: "folder", version: "1" }` and
+  `folder: { target, path }` (from game.json `install.folder`). `target` is
+  `documents` (the player's Documents folder as Windows knows it, from
+  `User Shell Folders\Personal`, so a Documents folder moved by OneDrive is
+  found; `DVR_DOCUMENTS_DIR` overrides it) or `game` (the game's folder).
+  `path` is relative; dvr-package's rules refuse `..`, drives and the like,
+  and the installer checks again before writing.
+- **Where files go:** payload `<plugin.folder>/X` goes to `<target>/<path>/X`,
+  and any other payload path P (`licenses/...`) to `<target>/<path>/P`, so
+  nothing lands outside the mod's folder. `plugin.config` maps the same way.
+  The manifest stays in the game folder (`.dvr/<id>.json`), as for the others.
+- **Nothing to download or configure:** no loader files, no `loaderConfig`.
+- **Uninstall** removes exactly the files installed, then the folders left
+  empty (up to the mod's folder); anything the game or the player added is
+  kept. A file that was already there is backed up and put back.
+- **Installed?** The manifest says so and the mod's folder is still there (the
+  player may delete it by hand); otherwise it shows as not installed.
+- **Launch:** the game exe with `launchArgs`, as for BepInEx.
 
 ## Can this PC run it?
 

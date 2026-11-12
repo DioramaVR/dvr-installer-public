@@ -5,8 +5,8 @@
   "credits": [
     {
       "name": "UEVR",
-      "for": "VR for the Unreal Engine games, by praydog",
-      "license": "MIT",
+      "for": "VR for the Unreal Engine games, by praydog. Not part of DioramaVR: when you install a UEVR mod, the installer downloads UEVR's official release to your PC.",
+      "license": "All rights reserved, praydog (its plugin header, API.h, is MIT)",
       "url": "https://github.com/praydog/UEVR",
       "highlight": true,
       "support": [
