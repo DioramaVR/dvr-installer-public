@@ -291,6 +291,8 @@ select, input[type=range] { accent-color: var(--pink); }
 .need b { display: block; color: var(--pink-hi); font-size: 12.5px; margin-bottom: 4px; }
 .need ul { margin: 0; padding-left: 18px; color: #f2dbe4; }
 .need li + li { margin-top: 4px; }
+/* A button inside a note (Steam Frame: close Steam and add the VR option) */
+.need .btn.small { display: flex; margin-top: 10px; padding: 8px 14px; font-size: 13px; border-radius: 10px; background: rgba(245, 240, 232, .1); color: var(--ink); }
 
 /* Main page: the shared VR menu guide */
 .vrmenu { max-width: 1200px; margin-top: 10px; }
@@ -306,9 +308,7 @@ select, input[type=range] { accent-color: var(--pink); }
 
 /* scrire.com's smoke, behind every page */
 .warp { position: absolute; inset: 0; width: 100%; height: 100%; display: block; opacity: .2; }
-/* The wordmark's dot is a little pixel flame (flame.js) */
-.word, .flame-word { position: relative; display: inline-block; }
-.flame { position: absolute; width: .55em; height: .85em; image-rendering: pixelated; pointer-events: none; --flame-color: #f5f0e8; }
+.word { position: relative; display: inline-block; }
 
 /* The VR menu guide page */
 .guide .home-scroll { padding-top: 8px; }
@@ -441,7 +441,6 @@ body.solid-bg .warp { display: none; }
 
 /* scrire signs the home page in Castoro. */
 .made-by { margin-top: 48px; font: 400 14px/1 var(--castoro); color: var(--muted); }
-.made-by .flame { --flame-color: rgba(245, 240, 232, .62); }
 .made-by + .foot { margin-top: 6px; }
 
 

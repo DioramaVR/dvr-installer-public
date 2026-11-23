@@ -73,6 +73,18 @@ async function withSteamClosed(flags, fn) {
   }
 }
 
+// Brings the "Play in VR" Steam launch options in line (engine/vrlaunch.js).
+async function vrLaunchSync(flags, always = false) {
+  if (!always && !Object.keys(engine.vrLaunch.readState()).length) return;
+  let r = engine.vrLaunch.sync();
+  if (r.pending.length && flags.closeSteam) r = await withSteamClosed(flags, () => engine.vrLaunch.sync());
+  for (const id of [...r.applied, ...r.adopted]) console.log(`Steam: added "Play in VR" to app ${id}.`);
+  for (const id of r.removed) console.log(`Steam: took "Play in VR" out of app ${id}.`);
+  for (const id of r.notInSteam) console.log(`Steam: app ${id} isn't in Steam's app data yet; it's added later.`);
+  if (r.pending.length) console.log(`Steam is running: the "Play in VR" option for app ${r.pending.join(', ')} waits until it's closed (or pass --close-steam).`);
+  if (always && !r.applied.length && !r.removed.length && !r.pending.length && !r.notInSteam.length) console.log('The "Play in VR" options are as they should be.');
+}
+
 const commands = {
   async refresh() {
     const r = await engine.refresh({ force: true });
@@ -157,6 +169,7 @@ const commands = {
     }
     console.log(`Copied ${m.files.length} files. Version ${m.version}. Options: ${JSON.stringify(m.options)}`);
     if (flags.desktop) console.log(`Desktop shortcut: ${engine.addDesktopEntry({ modId: st.id, gameDir })}`);
+    await vrLaunchSync(flags);
   },
 
   async uninstall([modId], flags) {
@@ -175,6 +188,13 @@ const commands = {
       ? `Removed the mod. BepInEx stays${r.otherPlugins.length ? ` for: ${r.otherPlugins.join(', ')}` : ' (it was there before)'}.`
       : 'Removed the mod and BepInEx. The game is back to normal.');
     console.log('Saves were not touched.');
+    await vrLaunchSync(flags);
+  },
+
+  // The "Play in VR" Steam launch options (Steam Frame): applied now if Steam
+  // is closed (or with --close-steam), else at the next chance.
+  async 'vr-launch'(_, flags) {
+    await vrLaunchSync(flags, true);
   },
 
   sideload([zip]) {

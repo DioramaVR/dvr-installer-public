@@ -150,7 +150,43 @@ app.on('window-all-closed', () => app.quit());
 
 const send = (ch, data) => win && !win.isDestroyed() && win.webContents.send(ch, data);
 
-ipcMain.handle('status', () => publicStatus());
+// The "Play in VR" Steam launch options (Steam Frame; engine/vrlaunch.js),
+// written into Steam's app data only while Steam is closed. Checked before
+// the first status (and so at every start: Steam replaces an app's entry when
+// Valve updates it), after every install or uninstall, and when the player
+// agrees to close Steam for it. Never in a dry run or the mock UI.
+let vrLaunchChecked = false;
+function syncVrLaunch() {
+  if (process.env.DVR_DRY_RUN || process.env.DVR_MOCK || typeof engine.vrLaunch?.sync !== 'function') return null;
+  try { return engine.vrLaunch.sync(); } catch (e) { console.warn('VR launch options:', e.message); return { error: e.message, pending: [] }; }
+}
+const vrLaunchOff = () => !!(process.env.DVR_DRY_RUN || process.env.DVR_MOCK || typeof engine.vrLaunchCheck !== 'function');
+// "Fix Steam Frame launch", step 1: which installed games' "Play in VR"
+// options are missing from Steam's data now (read only; Steam isn't touched).
+ipcMain.handle('vrlaunch:check', () => {
+  if (vrLaunchOff()) return { missing: [], notInSteam: [] };
+  const r = engine.vrLaunchCheck();
+  return { missing: r.pending, notInSteam: r.notInSteam };
+});
+// Step 2 (and the done page's button): close Steam if it's open, add what's
+// missing, start Steam again. With nothing missing, Steam is left alone.
+ipcMain.handle('vrlaunch:apply', async () => {
+  if (!vrLaunchOff() && !engine.vrLaunchCheck().pending.length) return { applied: [], removed: [], pending: [], restarted: false };
+  const steamDir = engine.steam.findSteam();
+  const wasRunning = engine.steam.steamRunning();
+  if (wasRunning) {
+    if (!(await engine.steam.closeSteam(steamDir))) throw new Error("Steam didn't close. Close it yourself and try again.");
+  }
+  const r = syncVrLaunch();
+  if (wasRunning) engine.steam.startSteam(steamDir);
+  if (r?.error) throw new Error(r.error);
+  return { ...r, restarted: wasRunning };
+});
+
+ipcMain.handle('status', () => {
+  if (!vrLaunchChecked) { vrLaunchChecked = true; syncVrLaunch(); }
+  return publicStatus();
+});
 ipcMain.handle('settings:get', () => loadSettings());
 ipcMain.handle('settings:set', (_, s) => saveSettings({ ...loadSettings(), ...s }));
 // Uninstall asks before closing Steam to remove an older install's "(VR)" entry.
@@ -351,6 +387,12 @@ ipcMain.handle('run', async (_, plan) => {
     } catch (e) { step(modId, 'error', { error: e.message }); results.push({ modId, action: 'install', ok: false, error: e.message }); }
   }
 
+  // While Steam is closed (or was closed for us), the VR launch options now.
+  const vl = syncVrLaunch();
+  for (const r of results) {
+    const appid = String(status.find((x) => x.id === r.modId)?.appid);
+    r.vrLaunch = vl?.pending?.includes(appid) ? 'pending' : vl?.applied?.includes(appid) || vl?.adopted?.includes(appid) || (typeof engine.vrLaunch?.state === 'function' && engine.vrLaunch.state(appid) === 'on') ? 'on' : null;
+  }
   if (restartSteam) { step(null, 'starting-steam'); engine.steam.startSteam(steamDir); }
   return results;
 });

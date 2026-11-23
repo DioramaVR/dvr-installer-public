@@ -4,9 +4,10 @@ A small Electron app that installs the free DioramaVR tabletop VR mods. It
 reads DioramaVR's signed list of mods, finds your installed Steam games, shows
 a gallery of the games there's a mod for, and downloads and installs (or
 uninstalls) the mods you pick. It can also put a "<Game> (VR)" shortcut on
-your desktop. It doesn't add anything to Steam: the mod lives in the game
-folder, so starting the game as usual with a headset connected starts it in
-VR. (Older versions added a "(VR)" entry to the Steam and SteamVR libraries;
+your desktop. The mod lives in the game folder, so starting the game as usual
+with a headset connected starts it in VR. For a mod whose data asks for it,
+it adds a "Play in VR" launch option to the game's Steam entry, which is what
+the Steam Frame starts from its library (below). (Older versions added a "(VR)" entry to the Steam and SteamVR libraries;
 uninstalling removes it, which needs Steam closed and restarted.) The exe
 ships no mods itself: they're downloaded, or loaded from a file (closed betas).
 
@@ -25,6 +26,8 @@ engine/            Node engine: no Electron, testable on its own
   options.js       shared options (left-handed, eye resolution)
   loaders.js       what each loader type puts in a game folder
   folders.js       base folders a folder mod can name (Documents, the game)
+  appinfo.js       Steam's appcache/appinfo.vdf (v29): parse, edit one app, write back checked
+  vrlaunch.js      the "Play in VR" Steam launch option (Steam Frame): wanted per game, synced while Steam is closed
   uevr.js          downloads + caches the pinned UEVR release; UEVR config.txt
   uevr-launch.ps1  the launcher the "(VR)" entries run for UEVR mods
   index.js         status / refresh / installRelease / install / uninstall / Steam entries / sideload / versions
@@ -35,7 +38,7 @@ engine/            Node engine: no Electron, testable on its own
 cli.js             command line over the engine
 app/               Electron main, preload, renderer (gallery -> options -> progress -> done)
 mods/<id>/         dev builds only: mod.json, build.json (how to build), payload/ (built, git-ignored); not in the exe
-scripts/           build-mods.js (payloads). The icon, smoke, flame and fonts come from tools/dvr-brand (npm run sync there).
+scripts/           build-mods.js (payloads). The icon, smoke and fonts come from tools/dvr-brand (npm run sync there).
 test/              node --test, against a fake Steam folder + dummy game
 ```
 
@@ -60,6 +63,7 @@ node cli.js versions tpm-vr # the versions on this PC
 node cli.js use tpm-vr <version|dev>
 node cli.js public tpm-vr   # back to the public release after a file
 node cli.js betas tpm-vr on|off
+node cli.js vr-launch [--close-steam]   # the "Play in VR" Steam launch options (Steam Frame)
 ```
 
 `install` downloads the release (default: the recommended one: tested on your
@@ -192,6 +196,72 @@ such game needs only data, no new code (dvr-package SPEC section 3, 0.1.5).
 - **Installed?** The manifest says so and the mod's folder is still there (the
   player may delete it by hand); otherwise it shows as not installed.
 - **Launch:** the game exe with `launchArgs`, as for BepInEx.
+
+## Steam Frame: the "Play in VR" launch option
+
+Experimental: the app says so wherever it mentions the Frame.
+
+A standalone headset such as the Steam Frame starts a PC game from its own
+library, with one of the game's Steam launch options: it keeps its own copy of
+the options, with Valve's ids, and sends the chosen id; the PC runs its entry
+with that id (0 if it has none). So for a mod with `vrLaunch` in its mod.json
+(dvr-package 0.1.6, from game.json `install.vrLaunch`, e.g.
+`{ "args": "-dvr-vr" }`), install changes the game's entry in Steam's
+`appcache/appinfo.vdf` (`engine/vrlaunch.js`):
+
+- the original option 0 moves, otherwise untouched, to a new id (the highest
+  id + 1: Death's Door 1, Timberborn 5); it gets the description "Play flat"
+  only if it had none. Every other option keeps its id, so the Frame's own
+  copy still means the same thing on the PC (Cataclismo's "DirectX 12
+  version" stays its id 2);
+- option 0 becomes ours: type `vr`, the original's executable and config
+  (oslist windows, osarch kept), arguments = the original's, then the mod's
+  `launchArgs`, then `vrLaunch.args` (`-force-d3d11 -dvr-vr`), described
+  "Play in VR (DioramaVR)";
+- `common/openvrsupport` = 1.
+
+Uninstall takes exactly that back from what install recorded (the new id,
+whether "Play flat" was added, openvrsupport before), byte for byte.
+
+Steam holds the file in memory and writes it when it exits, so it's only
+changed while `steam.exe` isn't running. Install and uninstall record what's
+wanted (`%LOCALAPPDATA%\DioramaVR\cache\vr-launch.json`); `sync()` applies
+it: at the app's start, after every install or uninstall, and when the player
+presses "Close Steam and add it" (Steam is closed, changed, started again).
+Steam replaces an app's entry when Valve updates the app; the next start
+notices our option is gone and adds it again. An option added by hand the
+same way (the first Frame tests) is taken over, so uninstall still restores
+Valve's entry.
+
+Every write is checked first: the unedited file must round-trip byte for byte
+through the parser with every entry's SHA-1 right, the edited file must parse,
+and every other app's entry must be byte-identical. Per entry only the KV
+blob, its size and its binary SHA-1 change (Valve's text SHA-1, changeNumber
+and the rest of the header stay). The file is backed up next to itself first
+(`appinfo.vdf.dvr-<time>.bak`, the newest two kept). `test/vrlaunch.test.js`
+runs on a made-up file.
+
+What the player reads (the done page): "Start <game> from your headset's
+library and pick "Play in VR"", plus, only for a game whose first start
+shows something on the PC's own screen, "Do the first start here at the PC:
+<reason>". Which games, and why, is `engine/firststart.js`, keyed by game id
+(Two Point Museum: Denuvo's activation pop-up and code page, and a few minutes
+of blank window; Cataclismo: a few minutes of blank window); a mod.json
+`firstStartOnPc` string would take precedence, if dvr-package ever gets one.
+Other games (Death's Door) get no such line. With Steam open: "Steam has to close once so a "Play in VR" option
+can be added to the game", with a "Close Steam and add it" button. Other
+headsets: nothing changes, the game starts as before. Every note is headed
+"Steam Frame (experimental)".
+
+**Fix Steam Frame launch.** An installed game's page shows its Frame status
+with a "Fix Steam Frame launch" button; when any installed game's option is
+missing, a banner on the home screen says "Frame support needs Steam restarted
+for <games>" with the same button. The button first checks, reading only
+(`engine.vrLaunchCheck()`: every installed mod with `vrLaunch` is recorded as
+wanting it again, in case the cache was cleared, then Steam's data is read
+fresh). Nothing missing: it says so and leaves Steam alone. Something missing:
+it asks ("Steam needs to restart ... Close any game you're playing first"),
+then closes Steam, adds the options and starts Steam again.
 
 ## Can this PC run it?
 

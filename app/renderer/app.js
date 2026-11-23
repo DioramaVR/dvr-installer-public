@@ -499,8 +499,10 @@ function renderGame() {
   const warns = [];
   const vc = state.pc?.checks.find((c) => c.id === 'vcredist' && c.status === 'bad');
   if (vc) warns.push(`<div class="warn bad"><b>Visual C++ runtime missing.</b> ${esc(vc.detail)}<br><button class="btn ghost" style="margin-top:10px;padding:7px 12px;font-size:12.5px" data-link="${esc(vc.link.url)}">${esc(vc.link.label)}</button></div>`);
-  // From the testedBuildIds of the version Install would use (the engine works it out).
+  // From the testedBuildIds of the installed version, else of the version Install would use (the engine works it out).
   if (g.buildTested === false) warns.push(`<div class="warn"><b>The game has been updated</b> since this mod was last tested (build ${esc(g.buildid)}). It will most likely still work; if it doesn't, uninstall here and the game is back to normal.</div>`);
+  const frame = frameStatus(g);
+  if (frame) warns.push(frame);
   $('warnings').innerHTML = warns.join('');
 
   const box = $('options');
@@ -643,6 +645,11 @@ function renderBanners() {
       ? 'This DioramaVR installer is too old to read the mod list. Get the newer one to see new mods and updates.'
       : `A newer DioramaVR installer is available${ni.latest ? ` (${ni.latest})` : ''}.`;
     out.push(`<div class="banner update"><span>${esc(text)}</span>${ni.url ? `<button class="btn ghost" data-link="${esc(ni.url)}">Get it</button>` : ''}</div>`);
+  }
+  // An installed game's "Play in VR" Steam option is missing (Steam was open, or a game update took it out).
+  const fm = frameMissing();
+  if (fm.length) {
+    out.push(`<div class="banner update"><span><b>${FRAME}:</b> Frame support needs Steam restarted for ${esc(gameNames(fm))}.</span><button class="btn ghost" data-vr-fix>Fix Steam Frame launch</button></div>`);
   }
   // The newest announcement that's showing (the engine has already filtered by date and version).
   const a = [...(r.announcements || [])].pop();
@@ -824,6 +831,87 @@ async function runUninstall() {
   showDone(results[0], { mode: 'uninstall' });
 }
 
+// The Steam Frame (and other headsets that start PC games from their own
+// library): a "Play in VR" launch option in the game's Steam entry
+// (engine/vrlaunch.js). Other headsets start the game as before.
+// Frame support is experimental: every note about it says so.
+const FRAME = 'Steam Frame (experimental)';
+function frameNote(g, state) {
+  // Only games whose first start shows something on the PC's own screen (engine/firststart.js).
+  const pc = g.firstStartOnPc ? ` Do the first start here at the PC: ${esc(g.firstStartOnPc)}` : '';
+  if (state === 'on') return `<div class="need"><b>${FRAME}</b>Start ${esc(g.game)} from your headset's library and pick "Play in VR".${pc}</div>`;
+  return `<div class="need"><b>${FRAME}</b>To start ${esc(g.game)} in VR from your headset's library, Steam has to close once so a "Play in VR" option can be added to the game.${pc}
+    <button class="btn small" data-vr-launch>Close Steam and add it</button></div>`;
+}
+// The game page's line for an installed mod with the option, with the
+// "Fix Steam Frame launch" button (it checks first and closes Steam only when
+// something is missing).
+function frameStatus(g) {
+  if (!isInstalled(g) || !g.vrLaunch) return '';
+  const fix = '<button class="btn small" data-vr-fix>Fix Steam Frame launch</button>';
+  const text = g.vrLaunch === 'pending'
+    ? `Frame support needs Steam restarted: the "Play in VR" option isn't in ${esc(g.game)}'s Steam entry. Fixing it closes Steam for a moment and starts it again.`
+    : g.vrLaunch === 'not-in-steam'
+      ? `Steam's data doesn't list ${esc(g.game)} yet, so the "Play in VR" option can't be added. Open the game's page in Steam once, then fix it here.`
+      : `Start ${esc(g.game)} from your headset's library and pick "Play in VR". If the option has gone (a game update can take it out), fix it here.`;
+  return `<div class="need"><b>${FRAME}</b>${text}${fix}</div>`;
+}
+const frameMissing = () => state.games.filter((g) => isInstalled(g) && g.vrLaunch === 'pending');
+const gameNames = (list) => list.map((g) => g.game).join(', ');
+
+// "Close Steam and add it" (the done page): close, add, start again.
+document.addEventListener('click', async (e) => {
+  const b = e.target.closest('[data-vr-launch]');
+  if (!b) return;
+  const note = b.parentElement;
+  b.disabled = true;
+  b.textContent = 'Closing Steam…';
+  try {
+    const r = await api.applyVrLaunch();
+    note.innerHTML = r?.pending?.length ? `<b>${FRAME}</b>Steam didn't close in time. Close it yourself and open this app again.` : `<b>${FRAME}</b>Done.${r?.restarted ? ' Steam is starting again.' : ''}`;
+  } catch (err) {
+    note.innerHTML = `<b>${FRAME}</b>${esc(ipcError(err))}`;
+  }
+});
+
+// "Fix Steam Frame launch" (the game page and the banner): check every
+// installed mod's option in Steam's data; if any is missing, ask, then close
+// Steam, add them and start Steam again.
+document.addEventListener('click', async (e) => {
+  const b = e.target.closest('[data-vr-fix]');
+  if (!b) return;
+  const label = b.textContent;
+  b.disabled = true;
+  b.textContent = 'Checking…';
+  const done = async (title, body) => {
+    await load();
+    if (state.current && !$('game').hidden) renderGame();
+    if (title) await ask(title, body, [{ label: 'OK', value: true, primary: true }]);
+  };
+  try {
+    const r = await api.checkVrLaunch();
+    const byAppid = (ids) => state.games.filter((g) => isInstalled(g) && ids.includes(String(g.appid)));
+    const missing = byAppid(r?.missing || []);
+    const notListed = byAppid(r?.notInSteam || []);
+    const later = notListed.length ? ` Steam's data doesn't list ${gameNames(notListed)} yet: open the game's page in Steam once, then try again.` : '';
+    if (!missing.length) return await done(FRAME, `Nothing to fix: every installed game that has it has its "Play in VR" option in Steam.${later}`);
+    const running = await api.steamRunning();
+    const go = !running || await ask('Steam needs to restart',
+      `The "Play in VR" option is missing for ${gameNames(missing)}. The app closes Steam, adds it and starts Steam again. Close any game you're playing first. Frame support is experimental.`,
+      [{ label: 'Cancel', value: false }, { label: 'Close & restart Steam', value: true, primary: true }]);
+    if (!go) return await done();
+    b.textContent = running ? 'Closing Steam…' : 'Adding…';
+    const a = await api.applyVrLaunch();
+    await done(FRAME, a?.pending?.length ? "Steam didn't close in time. Close it yourself and press Fix Steam Frame launch again."
+      : `Added for ${gameNames(missing)}.${a?.restarted ? ' Steam is starting again.' : ''} On the Frame, start the game from your headset's library and pick "Play in VR".${later}`);
+  } catch (err) {
+    await done(FRAME, ipcError(err));
+  } finally {
+    b.disabled = false;
+    b.textContent = label;
+  }
+});
+
 function showDone(r, plan) {
   const g = game();
   $('progressView').hidden = true;
@@ -852,8 +940,13 @@ function showDone(r, plan) {
     $('doneSub').textContent = `${g.name}${plan.version ? ` ${plan.version}` : ''} is installed.`;
     const start = plan.desktop ? `Double-click <b>${esc(name)}</b> on your desktop` : null;
     if (info(g).firstLaunch) $('doneNotes').innerHTML = `<div class="warn"><b>First start:</b> ${esc(info(g).firstLaunch)}</div>`;
+    if (r.vrLaunch) $('doneNotes').insertAdjacentHTML('beforeend', frameNote(g, r.vrLaunch));
     readyCtx = { start, canLaunch: !r.dryRun };
     renderReady();
+  }
+  if (r.ok && plan.mode === 'uninstall' && r.vrLaunch === 'pending') {
+    $('doneNotes').innerHTML = `<div class="need"><b>Steam is open</b>${esc(g.game)}'s "Play in VR" option stays in Steam until Steam has been closed while this app is open.
+      <button class="btn small" data-vr-launch>Close Steam and take it out</button></div>`;
   }
   if (r.ok && r.dryRun) {
     $('doneNotes').insertAdjacentHTML('afterbegin', '<div class="need"><b>Dry run</b>Nothing was installed, removed or changed. This is what it would look like.</div>');

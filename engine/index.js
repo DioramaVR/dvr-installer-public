@@ -17,6 +17,8 @@ const download = require('./download');
 const gamedata = require('./gamedata');
 const assets = require('./assets');
 const active = require('./active');
+const vrLaunch = require('./vrlaunch');
+const { firstStartOnPc } = require('./firststart');
 const dvr = require('dvr-package');
 const { compareVersions, appVersion } = require('./version');
 
@@ -403,6 +405,9 @@ function readManifest(gameDir, mod) {
 function status({ gameDirs = {} } = {}) {
   const steamDir = steam.findSteam();
   const local = new Map(loadMods().map((m) => [m.id, m]));
+  // Every version on this PC, read only if an older install needs it.
+  let every = null;
+  const versionsOf = (modId) => (every ||= allVersions()).get(modId) || [];
   const ids = [...new Set([...local.keys(), ...(remoteState?.games || []).map((g) => g.id)])];
   return ids.map((id) => {
     const mod = local.get(id) || null;
@@ -441,8 +446,18 @@ function status({ gameDirs = {} } = {}) {
     const upd = newer.find((r) => remote.isTested(r, buildid)) || newer[0] || null;
     const updateAvailable = upd ? { version: upd.version, maturity: upd.maturity } : null;
 
-    // The game-update warning: the active version's tested builds (a package's from its signed manifest).
-    const tested = ((pendingRelease || !mod) ? (pendingRelease || rec)?.testedBuildIds : mod.testedBuildIds) || [];
+    // The game-update warning. With a mod installed: the installed version's
+    // tested builds (kept in the manifest since 0.4.3; for an older install,
+    // that version's package or dev build here, else its index entry). With
+    // nothing installed: the version Install would use (a package's from its
+    // signed manifest).
+    const installedTested = manifest
+      ? manifest.modInfo?.testedBuildIds
+        || versionsOf(id).find((m) => versionOf(m) === installedVersion)?.testedBuildIds
+        || installedRelease?.testedBuildIds
+        || []
+      : null;
+    const tested = installedTested || ((pendingRelease || !mod) ? (pendingRelease || rec)?.testedBuildIds : mod.testedBuildIds) || [];
     const testedIds = tested.map(String);
     const issuesVersion = installedVersion || act?.version || rec?.version || null;
     const issues = issuesFor(index?.knownIssues || mod?.knownIssues || [], issuesVersion)
@@ -461,6 +476,8 @@ function status({ gameDirs = {} } = {}) {
       tutorial: mod?.tutorial || null,
       needToKnow: mod?.needToKnow || [],
       firstLaunch: mod?.firstLaunch || null,
+      // Why the first start must be done at the PC (engine/firststart.js), or null.
+      firstStartOnPc: firstStartOnPc(id, mod),
       storeUrl: `https://store.steampowered.com/app/${appid}/`,
       owned: !!game,
       gameDir: game?.dir || null,
@@ -474,6 +491,9 @@ function status({ gameDirs = {} } = {}) {
       installedSource,
       installedOptions: manifest?.options || null,
       steamShortcut: manifest?.steamShortcut || null,
+      // 'on' | 'pending' (Steam must close first) | 'not-in-steam' | null, from the last vrLaunch.sync().
+      // Whether the game has the option is the installed version's mod.json (kept in the manifest).
+      vrLaunch: manifest && (manifest.modInfo ? manifest.modInfo.vrLaunch : mod?.vrLaunch) ? vrLaunch.state(appid) : null,
       source,
       wave: wave ? { id: wave.id, name: wave.name } : null,
       status: g?.status || null,
@@ -651,6 +671,9 @@ async function install({ modId, gameDir, chosen = {}, onProgress = () => {} }) {
   }
 
   writeManifest(gameDir, mod, manifest);
+  // The "Play in VR" Steam launch option (Steam Frame): recorded now, written
+  // into Steam's app data by vrLaunch.sync() while Steam is closed.
+  vrLaunch.want(mod);
   onProgress({ step: 'done', done: total, total });
   return manifest;
 }
@@ -668,7 +691,7 @@ function installedHere(manifest, gameDir) {
 // The parts of mod.json that install and uninstall use, kept in the game's
 // .dvr manifest.
 function modInfo(mod) {
-  const keep = ['id', 'name', 'game', 'appid', 'exe', 'loader', 'plugin', 'uevr', 'folder', 'launchArgs'];
+  const keep = ['id', 'name', 'game', 'appid', 'exe', 'loader', 'plugin', 'uevr', 'folder', 'launchArgs', 'vrLaunch', 'testedBuildIds'];
   return JSON.parse(JSON.stringify(Object.fromEntries(keep.map((k) => [k, mod[k]]))));
 }
 
@@ -755,6 +778,7 @@ function uninstall({ modId, gameDir }) {
   fs.rmSync(manifestPath(gameDir, mod), { force: true });
   try { fs.rmdirSync(path.join(gameDir, MANIFEST_DIR)); } catch { }
 
+  vrLaunch.unwant(mod.appid);
   return { keptLoader: keepLoader, otherPlugins: others, removed, restored, steamShortcut: manifest.steamShortcut };
 }
 
@@ -866,8 +890,10 @@ const vrName = (mod) => `${mod.game} (VR)`;
 
 // How to start the game in VR: { exe, argv, args (one string), cwd, icon }.
 // BepInEx mods start the game exe itself; UEVR mods run their launcher.
+// A mod id: the mod as installed in gameDir (its launchArgs, loader and exe
+// are the installed version's, not those of another version made active).
 function launchCommand(mod, gameDir) {
-  if (typeof mod === 'string') mod = getMod(mod);
+  if (typeof mod === 'string') mod = gameDir ? installedMod(mod, gameDir).mod : getMod(mod);
   return loaders.get(mod.loader.type).launch(mod, gameDir);
 }
 
@@ -883,7 +909,7 @@ function removeSteamEntry({ modId, accountId, appid }) {
 }
 
 function addDesktopEntry({ modId, gameDir }) {
-  const mod = getMod(modId);
+  const { mod } = installedMod(modId, gameDir);
   const l = launchCommand(mod, gameDir);
   const lnk = shortcuts.addDesktopShortcut({
     lnkPath: path.join(shortcuts.desktopDir(), `${vrName(mod)}.lnk`),
@@ -944,8 +970,25 @@ function hoverOf(id, index) {
   return m ? { from: 'data', media: m } : null;
 }
 
+// "Fix Steam Frame launch": every installed mod that asks for the "Play in VR"
+// option is recorded as wanting it again (in case the record in the cache was
+// lost), then Steam's data is read fresh. Nothing is written to Steam here:
+// the result's pending lists the games whose option is missing (sync() adds it
+// once Steam is closed).
+function vrLaunchCheck() {
+  const steamDir = steam.findSteam();
+  for (const mod of loadMods()) {
+    const game = steamDir ? steam.findApp(steamDir, mod.appid) : null;
+    const manifest = game ? readManifest(game.dir, { id: mod.id }) : null;
+    if (!manifest || !installedHere(manifest, game.dir)) continue;
+    const info = { ...mod, ...(manifest.modInfo || {}) };
+    if (info.vrLaunch) vrLaunch.want(info);
+  }
+  return vrLaunch.sync({ steamDir, running: true });
+}
+
 module.exports = {
-  vr,
+  vr, vrLaunch, vrLaunchCheck,
   steam, shortcuts, options, cfg, preflight,
   modsDir, loadMods, getMod, status, readManifest,
   sideload, versions, setActive, maturityLabel, issuesFor, PLAYER_MESSAGES,

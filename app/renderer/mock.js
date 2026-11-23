@@ -23,6 +23,7 @@ if (!window.dvr) {
   const waves = { test: { id: 'test', name: 'Test wave' }, 1: { id: '1', name: 'Wave 1' } };
   const games = [
     { id: 'tpm-vr', name: 'Two Point Museum VR', game: 'Two Point Museum', appid: 2185060, owned: true, installed: false, buildid: '26287332',
+      firstStartOnPc: "Denuvo's activation pop-up and a page with a code appear on the PC's screen, and the first start shows a blank window for a few minutes.",
       wave: waves.test, status: 'stable', closedBeta: false, optInBeta: false, source: 'download', active: null, installedVersion: null,
       all: [rel('1.1.0', 'open-beta', { date: '2026-12-02', notes: 'Smoother table turning.' }), rel('1.0.0', 'stable', { tested: true }), rel('0.9.0', 'stable', { coreVersion: '0.1.0', date: '2026-11-12', tested: true })],
       knownIssues: [
@@ -37,7 +38,7 @@ if (!window.dvr) {
         { title: 'Move the table', text: 'Reach out and grab it.', controls: [['Either grip', 'Move the table'], ['Both grips', 'Scale and turn it'], ['Left stick up / down', 'Zoom']] }],
       video: new URL('../../mods/tpm-vr/hover.webm', location.href).href,
       options: [...shared, { id: 'desktopView', label: 'Keep the monitor view', help: "Draw the game on the monitor too while you're in VR. Costs frame rate.", type: 'bool', default: false }] },
-    { id: 'timberborn-vr', name: 'Timberborn VR', game: 'Timberborn', appid: 1062090, owned: true, installed: true, buildid: '1999', steamShortcut: {},
+    { id: 'timberborn-vr', name: 'Timberborn VR', game: 'Timberborn', appid: 1062090, owned: true, installed: true, buildid: '1999', steamShortcut: {}, vrLaunch: 'pending',
       wave: null, status: 'stable', closedBeta: false, optInBeta: false, source: 'download', active: null, installedVersion: '1.0.0', installedMaturity: 'stable',
       all: [rel('1.1.0', 'stable', { tested: true, notes: 'The VR menu draws again.' }), rel('1.0.0', 'stable')], knownIssues: [],
       art: art(1062090, { capsule: 'e1e203d598f5a7d5fb77c9d3994e7d6cd5998d00/library_capsule.jpg', hero: '37cf8d9c5e04102133140edf4dd2aaa46cbf15c7/library_hero.jpg' }), options: shared.slice(0, 1) },
@@ -112,6 +113,9 @@ if (!window.dvr) {
     getSettings: async () => ({}),
     setSettings: async () => {},
     steamRunning: async () => true,
+    // "Fix Steam Frame launch": Timberborn's "Play in VR" option is missing until it's applied.
+    checkVrLaunch: async () => ({ missing: games.filter((g) => g.vrLaunch === 'pending').map((g) => String(g.appid)), notInSteam: [] }),
+    applyVrLaunch: async () => { await new Promise((r) => setTimeout(r, 1500)); for (const g of games) if (g.vrLaunch === 'pending') g.vrLaunch = 'on'; return { applied: [], pending: [], restarted: true }; },
     openStore: async (id) => console.log('store', id),
     openLink: async (url) => console.log('link', url),
     // The real file, read the way the renderer reads its own files.

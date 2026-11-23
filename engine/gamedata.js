@@ -166,4 +166,4 @@ function mediaFile(id, index, name) {
 // Tests: forget this run's failures.
 function reset() { failed.clear(); inFlight.clear(); }
 
-module.exports = { get, cached, mediaFile, dataRef, setReader, reset, MAX_SIZE, MEDIA_TYPES };
+module.exports = { get, cached, mediaFile, dataRef, setReader, reset, MAX_SIZE, MEDIA_TYPES, _clean: clean };
